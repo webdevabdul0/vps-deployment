@@ -21,6 +21,9 @@ module.exports = {
       PORT: 3001 // Different from n8n (usually 5678)
     },
     
+    // Load environment variables from .env file
+    env_file: '.env.production',
+    
     // Logging (lightweight)
     log_file: '/var/log/flossy-widget/combined.log',
     out_file: '/var/log/flossy-widget/out.log',

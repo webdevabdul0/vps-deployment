@@ -45,3 +45,9 @@ Thumbs.db
 # Backup files
 *.bak
 *.backup
+
+# Data files (contain sensitive information)
+flossy_data.json
+*.db
+*.sqlite
+*.sqlite3
