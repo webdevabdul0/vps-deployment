@@ -38,7 +38,7 @@
             unavailable: '❌ That time isn\'t available. Please choose another time.'
         },
         privacyPolicyUrl: '',
-        webhookUrl: 'https://your-domain.com/webhook/appointment',
+        webhookUrl: 'http://213.165.249.205:5678/webhook/appointment-booking',
         appointmentFlow: {
             fields: [
                 { name: 'fullName', type: 'text', label: 'Full Name', required: true },
