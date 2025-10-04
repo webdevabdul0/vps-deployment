@@ -71,27 +71,43 @@ const writeData = (data) => {
 };
 
 // Helper function to generate available time slots
-function generateAvailableSlots(date, events, duration) {
+function generateAvailableSlots(date, events, duration, userTimezone = 'UTC') {
   const slots = [];
   const startHour = 9; // 9 AM
   const endHour = 17; // 5 PM
   const interval = 30; // 30 minutes
   
-  // Convert events to time ranges for easier checking
+  // Convert events to time ranges in the user's timezone
   const busyTimes = events.map(event => {
     const start = new Date(event.start.dateTime || event.start.date);
     const end = new Date(event.end.dateTime || event.end.date);
+    
+    // Convert to user's timezone for comparison
+    const startInUserTz = new Date(start.toLocaleString("en-US", {timeZone: userTimezone}));
+    const endInUserTz = new Date(end.toLocaleString("en-US", {timeZone: userTimezone}));
+    
     return {
-      start: start.getTime(),
-      end: end.getTime()
+      start: startInUserTz.getTime(),
+      end: endInUserTz.getTime()
     };
   });
   
-  // Generate slots from 9 AM to 5 PM
+  console.log('Slot generation for user timezone:', {
+    date,
+    userTimezone,
+    busyTimes: busyTimes.map(bt => ({
+      start: new Date(bt.start).toLocaleString("en-US", {timeZone: userTimezone}),
+      end: new Date(bt.end).toLocaleString("en-US", {timeZone: userTimezone})
+    }))
+  });
+  
+  // Generate slots from 9 AM to 5 PM in the user's timezone
   for (let hour = startHour; hour < endHour; hour++) {
     for (let minute = 0; minute < 60; minute += interval) {
-      const slotStart = new Date(date);
-      slotStart.setHours(hour, minute, 0, 0);
+      const slotTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+      
+      // Create slot time in user's timezone
+      const slotStart = new Date(`${date}T${slotTime}:00`);
       const slotEnd = new Date(slotStart.getTime() + duration * 60000);
       
       // Check if this slot conflicts with any existing events
@@ -101,7 +117,7 @@ function generateAvailableSlots(date, events, duration) {
       
       if (isAvailable) {
         slots.push({
-          time: `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`,
+          time: slotTime,
           displayTime: formatTime(hour, minute),
           available: true
         });
@@ -521,11 +537,11 @@ app.post('/api/calendar/create-event/:clientId', async (req, res) => {
     // Create calendar service
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     
-    // Parse appointment date and time (treat as user's local time)
-    const startDateTime = new Date(`${appointmentDate}T${appointmentTime}`);
+    // Parse appointment date and time in user's timezone
+    const startDateTime = new Date(`${appointmentDate}T${appointmentTime}:00`);
     const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
     
-    // Create event (use user's timezone)
+    // Create event in user's timezone
     const event = {
       summary: `Appointment - ${customerName}`,
       description: `Appointment booked via chatbot\n\nCustomer: ${customerName}\nEmail: ${customerEmail}\nPhone: ${customerPhone}`,
@@ -589,7 +605,7 @@ app.post('/api/calendar/create-event/:clientId', async (req, res) => {
         oauth2Client.setCredentials({ access_token: credentials.access_token });
         const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
         
-        const startDateTime = new Date(`${appointmentDate}T${appointmentTime}`);
+        const startDateTime = new Date(`${appointmentDate}T${appointmentTime}:00`);
         const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
         
         const event = {
@@ -632,7 +648,7 @@ app.post('/api/calendar/create-event/:clientId', async (req, res) => {
 // Check Google Calendar availability
 app.get('/api/calendar/availability/:clientId', async (req, res) => {
   const { clientId } = req.params;
-  const { date, duration = 60 } = req.query;
+  const { date, duration = 60, userTimezone = 'UTC' } = req.query;
   
   try {
     const data = readData();
@@ -650,11 +666,9 @@ app.get('/api/calendar/availability/:clientId', async (req, res) => {
     
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     
-    // Get start and end of day
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
+    // Get start and end of day in UTC to avoid timezone issues
+    const startOfDay = new Date(date + 'T00:00:00.000Z');
+    const endOfDay = new Date(date + 'T23:59:59.999Z');
     
     // Fetch existing events for the day
     const response = await calendar.events.list({
@@ -668,7 +682,19 @@ app.get('/api/calendar/availability/:clientId', async (req, res) => {
     const events = response.data.items || [];
     
     // Generate available time slots (9 AM to 5 PM, 30-minute intervals)
-    const availableSlots = generateAvailableSlots(date, events, parseInt(duration));
+    // Use the user's timezone for slot generation
+    console.log('Availability check debug:', {
+      date,
+      userTimezone,
+      eventsCount: events.length,
+      existingEvents: events.map(e => ({
+        start: e.start.dateTime || e.start.date,
+        end: e.end.dateTime || e.end.date,
+        summary: e.summary
+      }))
+    });
+    
+    const availableSlots = generateAvailableSlots(date, events, parseInt(duration), userTimezone);
     
     res.json({
       success: true,
@@ -690,7 +716,7 @@ app.get('/api/calendar/availability/:clientId', async (req, res) => {
 // Get smart appointment suggestions
 app.post('/api/calendar/suggestions/:clientId', async (req, res) => {
   const { clientId } = req.params;
-  const { preferredDate, preferredTime, duration = 60 } = req.body;
+  const { preferredDate, preferredTime, duration = 60, userTimezone = 'UTC' } = req.body;
   
   try {
     const data = readData();
@@ -702,7 +728,7 @@ app.post('/api/calendar/suggestions/:clientId', async (req, res) => {
     
     // Check availability for the preferred date
     const availabilityResponse = await axios.get(`http://localhost:${PORT}/api/calendar/availability/${clientId}`, {
-      params: { date: preferredDate, duration }
+      params: { date: preferredDate, duration, userTimezone }
     });
     
     const { availableSlots, existingEvents } = availabilityResponse.data;
@@ -750,11 +776,14 @@ app.post('/webhook/appointment-booking', async (req, res) => {
       try {
         // Get user timezone from request or default to UTC
         const userTimezone = req.body.userTimezone || 'UTC';
+        
+        console.log('Using user timezone:', userTimezone);
         // First check availability
         const availabilityResponse = await axios.get(`http://localhost:${PORT}/api/calendar/availability/${botId}`, {
           params: { 
             date: formData.preferredDate, 
-            duration: 60 
+            duration: 60,
+            userTimezone: userTimezone
           }
         });
         
@@ -772,7 +801,8 @@ app.post('/webhook/appointment-booking', async (req, res) => {
           const suggestionsResponse = await axios.post(`http://localhost:${PORT}/api/calendar/suggestions/${botId}`, {
             preferredDate: formData.preferredDate,
             preferredTime: formData.preferredTime,
-            duration: 60
+            duration: 60,
+            userTimezone: userTimezone
           });
           
           const responseTime = Date.now() - startTime;
