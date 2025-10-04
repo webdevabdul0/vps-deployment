@@ -64,12 +64,14 @@
     const styles = `
         @keyframes flossySlideIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
         @keyframes flossyFadeIn{from{opacity:0}to{opacity:1}}
-        @keyframes flossyTyping{0%,60%{opacity:1}30%{opacity:0.5}}
+        @keyframes flossyTyping{0%,60%{opacity:1}30%{opacity:0.3}}
+        @keyframes flossyPulse{0%,100%{opacity:1}50%{opacity:0.5}}
         .flossy-widget *{box-sizing:border-box}
         .flossy-widget{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
-        .flossy-slide-in{animation:flossySlideIn 0.3s ease-out}
+        .flossy-slide-in{animation:flossySlideIn 0.6s ease-out}
         .flossy-fade-in{animation:flossyFadeIn 0.3s ease-out}
         .flossy-typing{animation:flossyTyping 1.5s infinite}
+        .flossy-pulse{animation:flossyPulse 2s infinite}
         .flossy-widget::-webkit-scrollbar{width:6px}
         .flossy-widget::-webkit-scrollbar-track{background:#f1f1f1}
         .flossy-widget::-webkit-scrollbar-thumb{background:#c1c1c1;border-radius:3px}
@@ -78,6 +80,8 @@
         .flossy-submit-btn{background:${botConfig.themeColor};color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:bold;transition:all 0.3s ease}
         .flossy-submit-btn:hover{opacity:0.9;transform:translateY(-1px)}
         .flossy-submit-btn:disabled{opacity:0.6;cursor:not-allowed;transform:none}
+        .flossy-close-btn:hover{background:rgba(255,255,255,0.3) !important}
+        .flossy-send-btn:hover{transform:scale(1.05);box-shadow:0 4px 8px rgba(0,0,0,0.15) !important}
     `;
     
     // Inject styles efficiently
@@ -102,44 +106,60 @@
     // Create chat bubble (optimized HTML)
     const bubble = document.createElement('div');
     bubble.style.cssText = `
-        width:60px;height:60px;background:${botConfig.themeColor};border-radius:50%;
+        width:64px;height:64px;background:${botConfig.themeColor};border-radius:50%;
         cursor:pointer;display:flex;align-items:center;justify-content:center;
         box-shadow:0 4px 12px rgba(0,0,0,0.15);transition:transform 0.3s ease;position:relative;
     `;
-    bubble.innerHTML = `<svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h4l4 4 4-4h4c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>`;
+    bubble.innerHTML = `
+        <svg width="32" height="32" fill="none" stroke="white" viewBox="0 0 24 24" style="stroke-width:2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+        </svg>
+        <div style="position:absolute;top:-4px;right:-4px;width:16px;height:16px;background:#ef4444;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid white;animation:flossyPulse 2s infinite;">
+            <span style="color:white;font-size:10px;font-weight:bold;">1</span>
+        </div>
+    `;
     
     // Create chat window
     const chatWindow = document.createElement('div');
     chatWindow.style.cssText = `
-        position:absolute;bottom:70px;${botConfig.position === 'left' ? 'left' : 'right'}:0;
+        position:absolute;bottom:80px;${botConfig.position === 'left' ? 'left' : 'right'}:0;
         width:350px;height:500px;background:white;border-radius:16px;
-        box-shadow:0 10px 25px rgba(0,0,0,0.2);display:none;flex-direction:column;overflow:hidden;
+        box-shadow:0 20px 25px rgba(0,0,0,0.15),0 10px 10px rgba(0,0,0,0.04);display:none;flex-direction:column;overflow:hidden;border:1px solid #f3f4f6;
     `;
     
     // Create header
     const header = document.createElement('div');
-    header.style.cssText = `background:${botConfig.themeColor};color:white;padding:16px;display:flex;align-items:center;gap:12px;`;
+    header.style.cssText = `background:${botConfig.themeColor};color:white;padding:24px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(255,255,255,0.1);`;
     header.innerHTML = `
-        <img src="${botConfig.avatar}" alt="Bot" style="width:32px;height:32px;border-radius:50%;">
-        <div style="flex:1;">
-            <div style="font-weight:bold;font-size:14px;">${botConfig.name}</div>
-            <div style="font-size:12px;opacity:0.9;">Online now</div>
+        <div style="position:relative;">
+            <img src="${botConfig.avatar}" alt="Bot" style="width:40px;height:40px;border-radius:50%;border:2px solid rgba(255,255,255,0.3);">
+            <div style="position:absolute;bottom:-2px;right:-2px;width:12px;height:12px;background:#10b981;border-radius:50%;border:2px solid white;"></div>
         </div>
-        <button class="flossy-close-btn" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;padding:4px;">×</button>
+        <div style="flex:1;">
+            <div style="font-weight:600;font-size:18px;color:white;margin-bottom:2px;">${botConfig.name}</div>
+            <div style="font-size:14px;color:rgba(255,255,255,0.8);">Online now</div>
+        </div>
+        <button class="flossy-close-btn" style="background:rgba(255,255,255,0.2);border:none;color:white;font-size:16px;cursor:pointer;padding:8px;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;transition:background-color 0.2s;">×</button>
     `;
     
     // Create messages container
     const messagesContainer = document.createElement('div');
     messagesContainer.className = 'flossy-messages';
-    messagesContainer.style.cssText = `flex:1;padding:16px;overflow-y:auto;background:#f9fafb;`;
+    messagesContainer.style.cssText = `flex:1;padding:24px;overflow-y:auto;background:rgba(249,250,251,0.3);`;
     
     // Create input area
     const inputArea = document.createElement('div');
-    inputArea.style.cssText = `padding:16px;border-top:1px solid #e5e7eb;background:white;`;
+    inputArea.style.cssText = `padding:24px;border-top:1px solid #f3f4f6;background:white;`;
     inputArea.innerHTML = `
-        <div style="display:flex;gap:8px;">
-            <input class="flossy-input" type="text" placeholder="Type your message..." style="flex:1;padding:12px;border:1px solid #e5e7eb;border-radius:8px;outline:none;">
-            <button class="flossy-send-btn" style="background:${botConfig.themeColor};color:white;border:none;padding:12px 16px;border-radius:8px;cursor:pointer;">Send</button>
+        <div style="display:flex;gap:12px;align-items:center;">
+            <div style="flex:1;background:#f3f4f6;border-radius:16px;padding:12px 16px;">
+                <input class="flossy-input" type="text" placeholder="Type your message..." style="width:100%;background:transparent;border:none;outline:none;font-size:14px;color:#374151;" />
+            </div>
+            <button class="flossy-send-btn" style="background:${botConfig.themeColor};color:white;border:none;padding:12px;border-radius:50%;cursor:pointer;width:40px;height:40px;display:flex;align-items:center;justify-content:center;transition:all 0.2s;box-shadow:0 2px 4px rgba(0,0,0,0.1);">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width:2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" transform="rotate(90 12 12)"/>
+                </svg>
+            </button>
         </div>
     `;
     
@@ -178,12 +198,12 @@
     function addBotMessage(text, showAvatar = true) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'flossy-slide-in';
-        messageDiv.style.cssText = 'display:flex;gap:8px;margin-bottom:16px;';
+        messageDiv.style.cssText = 'display:flex;gap:12px;margin-bottom:16px;align-items:flex-start;';
         messageDiv.innerHTML = `
             ${showAvatar ? `<img src="${botConfig.avatar}" alt="Bot" style="width:32px;height:32px;border-radius:50%;flex-shrink:0;">` : '<div style="width:32px;"></div>'}
             <div style="flex:1;">
-                <div style="background:white;padding:12px;border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,0.1);margin-bottom:4px;">${text}</div>
-                <div style="font-size:11px;color:#6b7280;">Just now</div>
+                <div style="background:white;padding:12px 16px;border-radius:16px;border-radius-top-left:4px;box-shadow:0 1px 2px rgba(0,0,0,0.05);border:1px solid #f3f4f6;margin-bottom:4px;max-width:280px;">${text}</div>
+                <div style="font-size:11px;color:#9ca3af;margin-left:4px;">Just now</div>
             </div>
         `;
         messagesContainer.appendChild(messageDiv);
@@ -196,8 +216,8 @@
         messageDiv.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:16px;';
         messageDiv.innerHTML = `
             <div style="max-width:80%;">
-                <div style="background:${botConfig.themeColor};color:white;padding:12px;border-radius:12px;margin-bottom:4px;">${text}</div>
-                <div style="font-size:11px;color:#6b7280;text-align:right;">Just now</div>
+                <div style="background:${botConfig.themeColor};color:white;padding:12px 16px;border-radius:16px;border-radius-top-right:4px;margin-bottom:4px;box-shadow:0 1px 2px rgba(0,0,0,0.1);">${text}</div>
+                <div style="font-size:11px;color:#9ca3af;text-align:right;margin-right:4px;">Just now</div>
             </div>
         `;
         messagesContainer.appendChild(messageDiv);
@@ -210,13 +230,15 @@
         
         const typingDiv = document.createElement('div');
         typingDiv.className = 'flossy-typing-indicator flossy-slide-in';
-        typingDiv.style.cssText = 'display:flex;gap:8px;margin-bottom:16px;';
+        typingDiv.style.cssText = 'display:flex;gap:12px;margin-bottom:16px;align-items:flex-start;';
         typingDiv.innerHTML = `
             <img src="${botConfig.avatar}" alt="Bot" style="width:32px;height:32px;border-radius:50%;flex-shrink:0;">
-            <div style="background:white;padding:12px;border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,0.1);">
-                <div class="flossy-typing" style="display:inline-block;">●</div>
-                <div class="flossy-typing" style="display:inline-block;animation-delay:0.2s;">●</div>
-                <div class="flossy-typing" style="display:inline-block;animation-delay:0.4s;">●</div>
+            <div style="background:white;padding:12px 16px;border-radius:16px;border-radius-top-left:4px;box-shadow:0 1px 2px rgba(0,0,0,0.05);border:1px solid #f3f4f6;">
+                <div style="display:flex;gap:4px;">
+                    <div class="flossy-typing" style="width:6px;height:6px;background:#9ca3af;border-radius:50%;display:inline-block;"></div>
+                    <div class="flossy-typing" style="width:6px;height:6px;background:#9ca3af;border-radius:50%;display:inline-block;animation-delay:0.2s;"></div>
+                    <div class="flossy-typing" style="width:6px;height:6px;background:#9ca3af;border-radius:50%;display:inline-block;animation-delay:0.4s;"></div>
+                </div>
             </div>
         `;
         messagesContainer.appendChild(typingDiv);
@@ -436,8 +458,14 @@
     
     // Event listeners
     bubble.addEventListener('click', toggleChat);
-    bubble.addEventListener('mouseenter', () => bubble.style.transform = 'scale(1.1)');
-    bubble.addEventListener('mouseleave', () => bubble.style.transform = 'scale(1)');
+    bubble.addEventListener('mouseenter', () => {
+        bubble.style.transform = 'scale(1.1)';
+        bubble.style.boxShadow = '0 8px 25px rgba(0,0,0,0.25)';
+    });
+    bubble.addEventListener('mouseleave', () => {
+        bubble.style.transform = 'scale(1)';
+        bubble.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+    });
     
     header.querySelector('.flossy-close-btn').addEventListener('click', (e) => {
         e.stopPropagation();
