@@ -538,19 +538,27 @@ app.post('/api/calendar/create-event/:clientId', async (req, res) => {
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     
     // Parse appointment date and time in user's timezone
-    const startDateTime = new Date(`${appointmentDate}T${appointmentTime}:00`);
-    const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
+    // Create the datetime string in the user's timezone format
+    const startDateTimeStr = `${appointmentDate}T${appointmentTime}:00`;
+    const endDateTimeStr = `${appointmentDate}T${String(parseInt(appointmentTime.split(':')[0]) + Math.floor(duration / 60)).padStart(2, '0')}:${String((parseInt(appointmentTime.split(':')[1]) + (duration % 60)) % 60).padStart(2, '0')}:00`;
+    
+    console.log('Creating event with:', {
+      userTimezone,
+      startDateTimeStr,
+      endDateTimeStr,
+      duration
+    });
     
     // Create event in user's timezone
     const event = {
       summary: `Appointment - ${customerName}`,
       description: `Appointment booked via chatbot\n\nCustomer: ${customerName}\nEmail: ${customerEmail}\nPhone: ${customerPhone}`,
       start: {
-        dateTime: startDateTime.toISOString(),
+        dateTime: startDateTimeStr,
         timeZone: userTimezone,
       },
       end: {
-        dateTime: endDateTime.toISOString(),
+        dateTime: endDateTimeStr,
         timeZone: userTimezone,
       },
       attendees: [
@@ -605,18 +613,19 @@ app.post('/api/calendar/create-event/:clientId', async (req, res) => {
         oauth2Client.setCredentials({ access_token: credentials.access_token });
         const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
         
-        const startDateTime = new Date(`${appointmentDate}T${appointmentTime}:00`);
-        const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
+        // Create the datetime string in the user's timezone format
+        const startDateTimeStr = `${appointmentDate}T${appointmentTime}:00`;
+        const endDateTimeStr = `${appointmentDate}T${String(parseInt(appointmentTime.split(':')[0]) + Math.floor(duration / 60)).padStart(2, '0')}:${String((parseInt(appointmentTime.split(':')[1]) + (duration % 60)) % 60).padStart(2, '0')}:00`;
         
         const event = {
           summary: `Appointment - ${customerName}`,
           description: `Appointment booked via chatbot\n\nCustomer: ${customerName}\nEmail: ${customerEmail}\nPhone: ${customerPhone}`,
           start: { 
-            dateTime: startDateTime.toISOString(), 
+            dateTime: startDateTimeStr, 
             timeZone: userTimezone
           },
           end: { 
-            dateTime: endDateTime.toISOString(), 
+            dateTime: endDateTimeStr, 
             timeZone: userTimezone
           },
           attendees: [{ email: customerEmail, displayName: customerName }],
@@ -829,8 +838,31 @@ app.post('/webhook/appointment-booking', async (req, res) => {
           userTimezone: userTimezone
         });
         
-        // Store appointment in local data
+        // Store appointment in local data (check for duplicates first)
         const data = readData();
+        
+        // Check if appointment already exists for this time slot
+        const existingAppointment = data.appointments.find(apt => 
+          apt.botId === botId && 
+          apt.appointmentDate === formData.preferredDate && 
+          apt.appointmentTime === formData.preferredTime &&
+          apt.customerEmail === formData.contact
+        );
+        
+        if (existingAppointment) {
+          console.log('Appointment already exists, skipping duplicate creation');
+          const responseTime = Date.now() - startTime;
+          
+          return res.json({
+            success: true,
+            message: 'Appointment already exists!',
+            appointmentId: existingAppointment.id,
+            calendarEvent: calendarResponse.data,
+            responseTime: `${responseTime}ms`,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
         const appointmentId = `apt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
         data.appointments.push({
