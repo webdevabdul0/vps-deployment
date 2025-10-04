@@ -427,11 +427,15 @@
     function completeAppointment() {
         const typingDiv = showTypingIndicator();
         
+        // Get user's timezone
+        const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        
         // Send to webhook
         sendToWebhook({
             type: 'appointment_booking',
             botId: botConfig.botId,
             formData: formData,
+            userTimezone: userTimezone,
             timestamp: new Date().toISOString()
         }, (response) => {
             hideTypingIndicator();
@@ -526,10 +530,15 @@
                 
                 // Book the appointment
                 const typingDiv = showTypingIndicator();
+                
+                // Get user's timezone
+                const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                
                 sendToWebhook({
                     type: 'appointment_booking',
                     botId: botConfig.botId,
                     formData: formData,
+                    userTimezone: userTimezone,
                     timestamp: new Date().toISOString()
                 }, (response) => {
                     hideTypingIndicator();

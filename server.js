@@ -498,7 +498,7 @@ app.post('/api/calendar/refresh/:clientId', async (req, res) => {
 // Create Google Calendar event
 app.post('/api/calendar/create-event/:clientId', async (req, res) => {
   const { clientId } = req.params;
-  const { customerName, customerEmail, customerPhone, appointmentDate, appointmentTime, duration = 60 } = req.body;
+  const { customerName, customerEmail, customerPhone, appointmentDate, appointmentTime, duration = 60, userTimezone = 'UTC' } = req.body;
   
   if (!customerName || !customerEmail || !appointmentDate || !appointmentTime) {
     return res.status(400).json({ error: 'Missing required appointment details' });
@@ -521,21 +521,21 @@ app.post('/api/calendar/create-event/:clientId', async (req, res) => {
     // Create calendar service
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     
-    // Parse appointment date and time
+    // Parse appointment date and time (treat as user's local time)
     const startDateTime = new Date(`${appointmentDate}T${appointmentTime}`);
     const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
     
-    // Create event
+    // Create event (use user's timezone)
     const event = {
       summary: `Appointment - ${customerName}`,
       description: `Appointment booked via chatbot\n\nCustomer: ${customerName}\nEmail: ${customerEmail}\nPhone: ${customerPhone}`,
       start: {
         dateTime: startDateTime.toISOString(),
-        timeZone: 'UTC',
+        timeZone: userTimezone,
       },
       end: {
         dateTime: endDateTime.toISOString(),
-        timeZone: 'UTC',
+        timeZone: userTimezone,
       },
       attendees: [
         { email: customerEmail, displayName: customerName }
@@ -595,8 +595,14 @@ app.post('/api/calendar/create-event/:clientId', async (req, res) => {
         const event = {
           summary: `Appointment - ${customerName}`,
           description: `Appointment booked via chatbot\n\nCustomer: ${customerName}\nEmail: ${customerEmail}\nPhone: ${customerPhone}`,
-          start: { dateTime: startDateTime.toISOString(), timeZone: 'UTC' },
-          end: { dateTime: endDateTime.toISOString(), timeZone: 'UTC' },
+          start: { 
+            dateTime: startDateTime.toISOString(), 
+            timeZone: userTimezone
+          },
+          end: { 
+            dateTime: endDateTime.toISOString(), 
+            timeZone: userTimezone
+          },
           attendees: [{ email: customerEmail, displayName: customerName }],
           reminders: { useDefault: false, overrides: [{ method: 'email', minutes: 24 * 60 }, { method: 'popup', minutes: 30 }] },
         };
@@ -742,6 +748,8 @@ app.post('/webhook/appointment-booking', async (req, res) => {
     // If it's an appointment booking with form data
     if (type === 'appointment_booking' && formData && formData.fullName && formData.contact && formData.preferredDate && formData.preferredTime) {
       try {
+        // Get user timezone from request or default to UTC
+        const userTimezone = req.body.userTimezone || 'UTC';
         // First check availability
         const availabilityResponse = await axios.get(`http://localhost:${PORT}/api/calendar/availability/${botId}`, {
           params: { 
@@ -787,7 +795,8 @@ app.post('/webhook/appointment-booking', async (req, res) => {
           customerPhone: formData.phone || '',
           appointmentDate: formData.preferredDate,
           appointmentTime: formData.preferredTime,
-          duration: 60
+          duration: 60,
+          userTimezone: userTimezone
         });
         
         // Store appointment in local data
