@@ -75,9 +75,9 @@
         .flossy-widget::-webkit-scrollbar{width:6px}
         .flossy-widget::-webkit-scrollbar-track{background:#f1f1f1}
         .flossy-widget::-webkit-scrollbar-thumb{background:#c1c1c1;border-radius:3px}
-        .flossy-form-field{margin:10px 0;padding:12px;border:2px solid #e5e7eb;border-radius:8px;font-size:14px;transition:all 0.3s ease}
-        .flossy-form-field:focus{outline:none;border-color:${botConfig.themeColor};box-shadow:0 0 0 3px ${botConfig.themeColor}20}
-        .flossy-submit-btn{background:${botConfig.themeColor};color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:bold;transition:all 0.3s ease}
+        .flossy-form-field{margin:10px 0;padding:12px 16px;border:2px solid #e5e7eb;border-radius:12px;font-size:16px;transition:all 0.3s ease;width:100%}
+        .flossy-form-field:focus{outline:none;border-color:${botConfig.themeColor};box-shadow:0 0 0 3px ${botConfig.themeColor}20;transform:scale(1.02)}
+        .flossy-submit-btn{background:${botConfig.themeColor};color:white;border:none;padding:10px 20px;border-radius:12px;cursor:pointer;font-weight:bold;transition:all 0.3s ease}
         .flossy-submit-btn:hover{opacity:0.9;transform:translateY(-1px)}
         .flossy-submit-btn:disabled{opacity:0.6;cursor:not-allowed;transform:none}
         .flossy-close-btn:hover{background:rgba(255,255,255,0.3) !important}
@@ -123,7 +123,7 @@
     const chatWindow = document.createElement('div');
     chatWindow.style.cssText = `
         position:absolute;bottom:80px;${botConfig.position === 'left' ? 'left' : 'right'}:0;
-        width:350px;height:500px;background:white;border-radius:16px;
+        width:350px;height:500px;background:white;border-radius:20px;
         box-shadow:0 20px 25px rgba(0,0,0,0.15),0 10px 10px rgba(0,0,0,0.04);display:none;flex-direction:column;overflow:hidden;border:1px solid #f3f4f6;
     `;
     
@@ -152,7 +152,7 @@
     inputArea.style.cssText = `padding:24px;border-top:1px solid #f3f4f6;background:white;`;
     inputArea.innerHTML = `
         <div style="display:flex;gap:12px;align-items:center;">
-            <div style="flex:1;background:#f3f4f6;border-radius:16px;padding:12px 16px;">
+            <div style="flex:1;background:#f3f4f6;border-radius:20px;padding:12px 16px;">
                 <input class="flossy-input" type="text" placeholder="Type your message..." style="width:100%;background:transparent;border:none;outline:none;font-size:14px;color:#374151;" />
             </div>
             <button class="flossy-send-btn" style="background:${botConfig.themeColor};color:white;border:none;padding:12px;border-radius:50%;cursor:pointer;width:40px;height:40px;display:flex;align-items:center;justify-content:center;transition:all 0.2s;box-shadow:0 2px 4px rgba(0,0,0,0.1);">
@@ -202,7 +202,7 @@
         messageDiv.innerHTML = `
             ${showAvatar ? `<img src="${botConfig.avatar}" alt="Bot" style="width:32px;height:32px;border-radius:50%;flex-shrink:0;">` : '<div style="width:32px;"></div>'}
             <div style="flex:1;">
-                <div style="background:white;padding:12px 16px;border-radius:16px;border-radius-top-left:4px;box-shadow:0 1px 2px rgba(0,0,0,0.05);border:1px solid #f3f4f6;margin-bottom:4px;max-width:280px;">${text}</div>
+                <div style="background:white;color:#374151;padding:12px 16px;border-radius:20px;border-radius-top-left:6px;box-shadow:0 1px 2px rgba(0,0,0,0.05);border:1px solid #f3f4f6;margin-bottom:4px;max-width:280px;font-size:14px;">${text}</div>
                 <div style="font-size:11px;color:#9ca3af;margin-left:4px;">Just now</div>
             </div>
         `;
@@ -216,7 +216,7 @@
         messageDiv.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:16px;';
         messageDiv.innerHTML = `
             <div style="max-width:80%;">
-                <div style="background:${botConfig.themeColor};color:white;padding:12px 16px;border-radius:16px;border-radius-top-right:4px;margin-bottom:4px;box-shadow:0 1px 2px rgba(0,0,0,0.1);">${text}</div>
+                <div style="background:${botConfig.themeColor};color:white;padding:12px 16px;border-radius:20px;border-radius-top-right:6px;margin-bottom:4px;box-shadow:0 1px 2px rgba(0,0,0,0.1);font-size:14px;">${text}</div>
                 <div style="font-size:11px;color:#9ca3af;text-align:right;margin-right:4px;">Just now</div>
             </div>
         `;
@@ -233,7 +233,7 @@
         typingDiv.style.cssText = 'display:flex;gap:12px;margin-bottom:16px;align-items:flex-start;';
         typingDiv.innerHTML = `
             <img src="${botConfig.avatar}" alt="Bot" style="width:32px;height:32px;border-radius:50%;flex-shrink:0;">
-            <div style="background:white;padding:12px 16px;border-radius:16px;border-radius-top-left:4px;box-shadow:0 1px 2px rgba(0,0,0,0.05);border:1px solid #f3f4f6;">
+            <div style="background:white;padding:12px 16px;border-radius:20px;border-radius-top-left:6px;box-shadow:0 1px 2px rgba(0,0,0,0.05);border:1px solid #f3f4f6;">
                 <div style="display:flex;gap:4px;">
                     <div class="flossy-typing" style="width:6px;height:6px;background:#9ca3af;border-radius:50%;display:inline-block;"></div>
                     <div class="flossy-typing" style="width:6px;height:6px;background:#9ca3af;border-radius:50%;display:inline-block;animation-delay:0.2s;"></div>
@@ -268,8 +268,11 @@
         botConfig.appointmentOptions.forEach(option => {
             optionsHTML += `
                 <div class="flossy-option" data-type="${option.type}" data-text="${option.text}" 
-                     style="background:white;border:2px solid #e5e7eb;padding:12px;border-radius:8px;margin-bottom:8px;cursor:pointer;transition:all 0.3s ease;">
-                    ${option.text}
+                     style="background:#f8fafc;border:1px solid #e5e7eb;padding:12px;border-radius:12px;margin-bottom:8px;cursor:pointer;transition:all 0.3s ease;display:flex;align-items:center;gap:12px;">
+                    <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${botConfig.themeColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                        <div style="width:12px;height:12px;border-radius:50%;background:${botConfig.themeColor};opacity:0;transform:scale(0);transition:all 0.2s ease;"></div>
+                    </div>
+                    <span style="font-size:14px;color:#374151;font-weight:500;">${option.text}</span>
                 </div>
             `;
         });
@@ -285,12 +288,20 @@
                 selectOption(type, text);
             });
             option.addEventListener('mouseenter', function() {
-                this.style.borderColor = botConfig.themeColor;
-                this.style.transform = 'translateY(-1px)';
+                this.style.borderColor = '#d1d5db';
+                this.style.transform = 'scale(1.02)';
+                this.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+                const innerCircle = this.querySelector('div div');
+                innerCircle.style.opacity = '1';
+                innerCircle.style.transform = 'scale(1)';
             });
             option.addEventListener('mouseleave', function() {
                 this.style.borderColor = '#e5e7eb';
-                this.style.transform = 'translateY(0)';
+                this.style.transform = 'scale(1)';
+                this.style.boxShadow = 'none';
+                const innerCircle = this.querySelector('div div');
+                innerCircle.style.opacity = '0';
+                innerCircle.style.transform = 'scale(0)';
             });
         });
     }
@@ -345,19 +356,14 @@
         }
         
         fieldDiv.innerHTML = `
-            <div style="margin-bottom:8px;font-weight:bold;color:#374151;">${field.label}:</div>
-            <div style="display:flex;gap:8px;">
-                <input class="flossy-form-field" type="${inputType}" placeholder="${placeholder}" 
-                       style="flex:1;" ${field.required ? 'required' : ''}>
-                <button class="flossy-submit-btn" style="padding:12px 16px;">Submit</button>
-            </div>
+            <input class="flossy-form-field" type="${inputType}" placeholder="${placeholder}" 
+                   ${field.required ? 'required' : ''}>
         `;
         
         messagesContainer.appendChild(fieldDiv);
         scrollToBottom();
         
         const input = fieldDiv.querySelector('.flossy-form-field');
-        const submitBtn = fieldDiv.querySelector('.flossy-submit-btn');
         
         // Focus the input
         setTimeout(() => input.focus(), 100);
@@ -410,9 +416,8 @@
             }, 800);
         }
         
-        submitBtn.addEventListener('click', submitField);
         input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
+            if (e.key === 'Enter' && e.target.value.trim()) {
                 submitField();
             }
         });
