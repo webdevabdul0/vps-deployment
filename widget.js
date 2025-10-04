@@ -432,24 +432,148 @@
             botId: botConfig.botId,
             formData: formData,
             timestamp: new Date().toISOString()
-        });
-        
-        setTimeout(() => {
+        }, (response) => {
             hideTypingIndicator();
             
-            // Show confirmation message
-            const confirmationMessage = botConfig.confirmationMessages.success
-                .replace('[chosen date/time]', `${formData.preferredDate} at ${formData.preferredTime}`);
-            
-            addBotMessage(confirmationMessage);
-            
-            setTimeout(() => {
-                addBotMessage("Is there anything else I can help you with today? 😊");
-            }, 2000);
-        }, 2000);
+            if (response.success) {
+                // Show confirmation message
+                const confirmationMessage = botConfig.confirmationMessages.success
+                    .replace('[chosen date/time]', `${formData.preferredDate} at ${formData.preferredTime}`);
+                
+                addBotMessage(confirmationMessage);
+                
+                setTimeout(() => {
+                    addBotMessage("Is there anything else I can help you with today? 😊");
+                }, 2000);
+            } else if (response.conflict) {
+                // Show conflict message and suggestions
+                addBotMessage("❌ " + response.message);
+                
+                setTimeout(() => {
+                    showAppointmentSuggestions(response.suggestions, response.availableSlots);
+                }, 1000);
+            } else {
+                // Show error message
+                addBotMessage("❌ " + (response.message || "Sorry, there was an error booking your appointment. Please try again."));
+                
+                setTimeout(() => {
+                    addBotMessage("Would you like to try booking again?");
+                    showAppointmentOptions();
+                }, 2000);
+            }
+        });
     }
     
-    function sendToWebhook(data) {
+    function showAppointmentSuggestions(suggestions, availableSlots) {
+        const suggestionsDiv = document.createElement('div');
+        suggestionsDiv.className = 'flossy-suggestions flossy-slide-in';
+        suggestionsDiv.style.cssText = 'margin-bottom:16px;';
+        
+        let suggestionsHTML = '<div style="margin-bottom:12px;font-weight:bold;color:#374151;">Here are some available times:</div>';
+        
+        // Show smart suggestions first
+        if (suggestions && suggestions.length > 0) {
+            suggestions.forEach((suggestion, index) => {
+                suggestionsHTML += `
+                    <div class="flossy-suggestion" data-time="${suggestion.time}" data-date="${formData.preferredDate}"
+                         style="background:#f8fafc;border:1px solid #e5e7eb;padding:12px;border-radius:12px;margin-bottom:8px;cursor:pointer;transition:all 0.3s ease;display:flex;align-items:center;gap:12px;">
+                        <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${botConfig.themeColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                            <div style="width:12px;height:12px;border-radius:50%;background:${botConfig.themeColor};opacity:0;transform:scale(0);transition:all 0.2s ease;"></div>
+                        </div>
+                        <div style="flex:1;">
+                            <div style="font-size:14px;color:#374151;font-weight:500;margin-bottom:2px;">${suggestion.displayTime}</div>
+                            <div style="font-size:12px;color:#6b7280;">${suggestion.message}</div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+        
+        // Show available slots if we have them
+        if (availableSlots && availableSlots.length > 0) {
+            suggestionsHTML += '<div style="margin-top:16px;margin-bottom:8px;font-weight:bold;color:#374151;">Or choose from all available times:</div>';
+            
+            availableSlots.slice(0, 6).forEach(slot => {
+                suggestionsHTML += `
+                    <div class="flossy-slot" data-time="${slot.time}" data-date="${formData.preferredDate}"
+                         style="background:#f0f9ff;border:1px solid #0ea5e9;padding:8px 12px;border-radius:8px;margin-bottom:6px;cursor:pointer;transition:all 0.3s ease;display:inline-block;margin-right:8px;font-size:12px;color:#0369a1;">
+                        ${slot.displayTime}
+                    </div>
+                `;
+            });
+        }
+        
+        suggestionsDiv.innerHTML = suggestionsHTML;
+        messagesContainer.appendChild(suggestionsDiv);
+        scrollToBottom();
+        
+        // Add event listeners for suggestions
+        suggestionsDiv.querySelectorAll('.flossy-suggestion, .flossy-slot').forEach(suggestion => {
+            suggestion.addEventListener('click', function() {
+                const selectedTime = this.getAttribute('data-time');
+                const selectedDate = this.getAttribute('data-date');
+                
+                // Update form data with selected time
+                formData.preferredTime = selectedTime;
+                formData.preferredDate = selectedDate;
+                
+                // Remove suggestions
+                suggestionsDiv.remove();
+                
+                // Show confirmation
+                addUserMessage(`I'd like to book for ${selectedDate} at ${selectedTime}`);
+                
+                // Book the appointment
+                const typingDiv = showTypingIndicator();
+                sendToWebhook({
+                    type: 'appointment_booking',
+                    botId: botConfig.botId,
+                    formData: formData,
+                    timestamp: new Date().toISOString()
+                }, (response) => {
+                    hideTypingIndicator();
+                    
+                    if (response.success) {
+                        addBotMessage("✅ Perfect! Your appointment has been booked successfully. You'll receive a confirmation email shortly.");
+                        
+                        setTimeout(() => {
+                            addBotMessage("Is there anything else I can help you with today? 😊");
+                        }, 2000);
+                    } else {
+                        addBotMessage("❌ Sorry, that time slot is no longer available. Please try another time.");
+                        setTimeout(() => {
+                            showAppointmentSuggestions(response.suggestions, response.availableSlots);
+                        }, 1000);
+                    }
+                });
+            });
+            
+            // Add hover effects
+            suggestion.addEventListener('mouseenter', function() {
+                this.style.borderColor = '#d1d5db';
+                this.style.transform = 'scale(1.02)';
+                this.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+                const innerCircle = this.querySelector('div div');
+                if (innerCircle) {
+                    innerCircle.style.opacity = '1';
+                    innerCircle.style.transform = 'scale(1)';
+                }
+            });
+            
+            suggestion.addEventListener('mouseleave', function() {
+                this.style.borderColor = this.classList.contains('flossy-slot') ? '#0ea5e9' : '#e5e7eb';
+                this.style.transform = 'scale(1)';
+                this.style.boxShadow = 'none';
+                const innerCircle = this.querySelector('div div');
+                if (innerCircle) {
+                    innerCircle.style.opacity = '0';
+                    innerCircle.style.transform = 'scale(0)';
+                }
+            });
+        });
+    }
+    
+    function sendToWebhook(data, callback) {
         if (!botConfig.webhookUrl) return;
         
         fetch(botConfig.webhookUrl, {
@@ -458,7 +582,20 @@
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(data)
-        }).catch(err => console.log('Webhook error:', err));
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (callback) callback(result);
+        })
+        .catch(err => {
+            console.log('Webhook error:', err);
+            if (callback) {
+                callback({
+                    success: false,
+                    message: 'Network error. Please try again.'
+                });
+            }
+        });
     }
     
     // Event listeners
