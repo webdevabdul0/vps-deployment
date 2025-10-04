@@ -231,10 +231,16 @@ app.get('/oauth2/authorize/:clientId', (req, res) => {
 });
 
 app.get('/oauth2/callback', async (req, res) => {
+  console.log('=== OAUTH CALLBACK HIT ===');
+  console.log('Timestamp:', new Date().toISOString());
+  console.log('Query params:', req.query);
+  console.log('Headers:', req.headers);
+  
   const { code, state } = req.query;
   const clientId = state;
   
   console.log('OAuth callback received:', { code: code ? 'present' : 'missing', state, clientId });
+  console.log('Full request URL:', req.url);
   
   if (!code || !clientId) {
     console.error('Missing authorization code or client ID:', { code: !!code, clientId: !!clientId });
@@ -253,6 +259,8 @@ app.get('/oauth2/callback', async (req, res) => {
     // Store tokens in JSON file (no encryption for now)
     console.log('Storing tokens in JSON file for clientId:', clientId);
     const data = readData();
+    console.log('Current data before storing:', JSON.stringify(data, null, 2));
+    
     data.google_tokens[clientId] = {
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token,
@@ -262,8 +270,11 @@ app.get('/oauth2/callback', async (req, res) => {
       updated_at: new Date().toISOString()
     };
     
+    console.log('Data after adding tokens:', JSON.stringify(data, null, 2));
+    
     if (writeData(data)) {
       console.log('Tokens stored successfully for clientId:', clientId);
+      console.log('Final data file contents:', JSON.stringify(readData(), null, 2));
       
       // Send HTML response that communicates with parent window
       res.send(`
@@ -305,7 +316,7 @@ app.get('/oauth2/callback', async (req, res) => {
               window.opener.postMessage({
                 type: 'GOOGLE_OAUTH_SUCCESS',
                 clientId: '${clientId}'
-              }, window.location.origin);
+              }, '*');
             }
             
             // Auto-close after 2 seconds
@@ -357,7 +368,7 @@ app.get('/oauth2/callback', async (req, res) => {
               window.opener.postMessage({
                 type: 'GOOGLE_OAUTH_ERROR',
                 error: 'Failed to store tokens'
-              }, window.location.origin);
+              }, '*');
             }
             
             // Auto-close after 3 seconds
@@ -884,7 +895,7 @@ process.on('SIGTERM', () => {
 const server = app.listen(PORT, () => {
   console.log(`🚀 Flossy Widget Server running on port ${PORT}`);
   console.log(`📦 Widget URL: http://localhost:${PORT}/widget.js`);
-  console.log(`🔗 Webhook URL: http://localhost:${PORT}/webhook/appointment`);
+  console.log(`🔗 Webhook URL: http://localhost:${PORT}/webhook/appointment-booking`);
   console.log(`📊 Health Check: http://localhost:${PORT}/health`);
   console.log(`📈 Metrics: http://localhost:${PORT}/metrics`);
   

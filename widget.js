@@ -39,6 +39,7 @@
         },
         privacyPolicyUrl: '',
         webhookUrl: 'http://213.165.249.205:5678/webhook/appointment-booking',
+        
         appointmentFlow: {
             fields: [
                 { name: 'fullName', type: 'text', label: 'Full Name', required: true },
