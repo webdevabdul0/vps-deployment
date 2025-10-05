@@ -104,7 +104,7 @@ In `server.js`, you can modify the webhook handler to forward requests to your n
 // Example: Forward to n8n webhook
 app.post('/webhook/appointment', async (req, res) => {
   // Forward to n8n
-  await fetch('http://localhost:5678/webhook/your-n8n-webhook-id', {
+  await fetch('https://n8n.flipthatpdf.site/webhook/your-n8n-webhook-id', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req.body)

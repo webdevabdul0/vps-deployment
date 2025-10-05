@@ -38,9 +38,9 @@
             unavailable: '❌ That time isn\'t available. Please choose another time.'
         },
         privacyPolicyUrl: '',
-        webhookUrl: 'http://213.165.249.205:5678/webhook/appointment-booking',
-        gmailBrochureUrl: 'http://213.165.249.205:5678/webhook/gmail-brochure',
-        gmailCallbackUrl: 'http://213.165.249.205:5678/webhook/gmail-callback',
+        webhookUrl: 'https://n8n.flipthatpdf.site/webhook/appointment-booking',
+        gmailBrochureUrl: 'https://n8n.flipthatpdf.site/webhook/gmail-brochure',
+        gmailCallbackUrl: 'https://n8n.flipthatpdf.site/webhook/gmail-callback',
         
         appointmentFlow: {
             fields: [
