@@ -39,6 +39,8 @@
         },
         privacyPolicyUrl: '',
         webhookUrl: 'http://213.165.249.205:5678/webhook/appointment-booking',
+        gmailBrochureUrl: 'http://213.165.249.205:5678/webhook/gmail-brochure',
+        gmailCallbackUrl: 'http://213.165.249.205:5678/webhook/gmail-callback',
         
         appointmentFlow: {
             fields: [

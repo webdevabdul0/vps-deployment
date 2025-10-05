@@ -765,6 +765,124 @@ app.post('/api/calendar/suggestions/:clientId', async (req, res) => {
   }
 });
 
+// Gmail Brochure webhook endpoint
+app.post('/webhook/gmail-brochure', async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    const { botId, type, treatment, customer, company } = req.body;
+    
+    console.log(`[${new Date().toISOString()}] Gmail Brochure webhook:`, {
+      botId,
+      type,
+      treatment: treatment?.name,
+      customer: customer?.email,
+      company: company?.name,
+      ip: req.ip
+    });
+    
+    // Forward to n8n Gmail workflow
+    try {
+      const n8nResponse = await axios.post('https://n8n.flipthatpdf.site/webhook/gmail-brochure', req.body, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+      
+      const responseTime = Date.now() - startTime;
+      
+      res.json({
+        success: true,
+        message: 'Brochure request processed successfully',
+        n8nResponse: n8nResponse.data,
+        responseTime: `${responseTime}ms`,
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (n8nError) {
+      console.error('n8n Gmail Brochure webhook error:', n8nError.response?.data || n8nError.message);
+      
+      const responseTime = Date.now() - startTime;
+      
+      res.json({
+        success: false,
+        message: 'Brochure request received but email service is temporarily unavailable',
+        error: n8nError.response?.data?.error || 'n8n service unavailable',
+        responseTime: `${responseTime}ms`,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+  } catch (error) {
+    console.error('Gmail Brochure webhook error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Gmail Callback webhook endpoint
+app.post('/webhook/gmail-callback', async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    const { botId, type, customer, callback, company } = req.body;
+    
+    console.log(`[${new Date().toISOString()}] Gmail Callback webhook:`, {
+      botId,
+      type,
+      customer: customer?.name,
+      callback: callback?.reason,
+      company: company?.name,
+      ip: req.ip
+    });
+    
+    // Forward to n8n Gmail workflow
+    try {
+      const n8nResponse = await axios.post('https://n8n.flipthatpdf.site/webhook/gmail-callback', req.body, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+      
+      const responseTime = Date.now() - startTime;
+      
+      res.json({
+        success: true,
+        message: 'Callback request processed successfully',
+        n8nResponse: n8nResponse.data,
+        responseTime: `${responseTime}ms`,
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (n8nError) {
+      console.error('n8n Gmail Callback webhook error:', n8nError.response?.data || n8nError.message);
+      
+      const responseTime = Date.now() - startTime;
+      
+      res.json({
+        success: false,
+        message: 'Callback request received but email service is temporarily unavailable',
+        error: n8nError.response?.data?.error || 'n8n service unavailable',
+        responseTime: `${responseTime}ms`,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+  } catch (error) {
+    console.error('Gmail Callback webhook error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Webhook endpoint for appointment bookings
 app.post('/webhook/appointment-booking', async (req, res) => {
   const startTime = Date.now();
@@ -966,7 +1084,9 @@ process.on('SIGTERM', () => {
 const server = app.listen(PORT, () => {
   console.log(`🚀 Flossy Widget Server running on port ${PORT}`);
   console.log(`📦 Widget URL: http://localhost:${PORT}/widget.js`);
-  console.log(`🔗 Webhook URL: http://localhost:${PORT}/webhook/appointment-booking`);
+  console.log(`🔗 Appointment Webhook: http://localhost:${PORT}/webhook/appointment-booking`);
+  console.log(`📧 Gmail Brochure Webhook: http://localhost:${PORT}/webhook/gmail-brochure`);
+  console.log(`📞 Gmail Callback Webhook: http://localhost:${PORT}/webhook/gmail-callback`);
   console.log(`📊 Health Check: http://localhost:${PORT}/health`);
   console.log(`📈 Metrics: http://localhost:${PORT}/metrics`);
   
