@@ -29,15 +29,11 @@
         openingMessages: [
             { text: 'Hi! How can I help you today?', showAvatar: true }
         ],
-        appointmentOptions: [
-            { text: 'Request an appointment', type: 'appointment' }
-        ],
-        appointmentGreeting: 'Hello! I can help you book an appointment.',
-        confirmationMessages: {
-            success: '✅ I\'ve reserved your appointment. You\'ll receive a confirmation email shortly.',
-            unavailable: '❌ That time isn\'t available. Please choose another time.'
-        },
+        appointmentGreeting: 'Hello! 👋 I can help you book an appointment at our clinic.\nWhat\'s your full name?',
         privacyPolicyUrl: '',
+        companyOwnerEmail: '',
+        companyPhone: '',
+        companyWebsite: '',
         webhookUrl: 'https://n8n.flipthatpdf.site/webhook/appointment-booking',
         gmailBrochureUrl: 'https://n8n.flipthatpdf.site/webhook/gmail-brochure',
         gmailCallbackUrl: 'https://n8n.flipthatpdf.site/webhook/gmail-callback',
@@ -49,6 +45,21 @@
                 { name: 'phone', type: 'tel', label: 'Phone Number', required: true },
                 { name: 'preferredDate', type: 'date', label: 'Preferred Date', required: true },
                 { name: 'preferredTime', type: 'time', label: 'Preferred Time', required: true }
+            ]
+        },
+        
+        treatmentFlow: {
+            options: [],
+            webhookUrl: 'https://n8n.flipthatpdf.site/webhook/gmail-brochure'
+        },
+        
+        callbackFlow: {
+            fields: [
+                { name: 'name', type: 'text', label: 'Full Name', required: true },
+                { name: 'email', type: 'email', label: 'Email Address', required: true },
+                { name: 'phone', type: 'tel', label: 'Phone Number', required: true },
+                { name: 'reason', type: 'text', label: 'Reason for Callback', required: true },
+                { name: 'timing', type: 'text', label: 'Preferred Time', required: true }
             ]
         }
     };
@@ -62,6 +73,23 @@
     let currentFormStep = -1;
     let formData = {};
     let isTyping = false;
+    
+    // New workflow states
+    let currentWorkflow = null;
+    let selectedTreatment = null;
+    let showTreatmentOptions = false;
+    let showCallbackForm = false;
+    let callbackData = {};
+    let currentCallbackField = -1;
+    let showCallbackInput = false;
+    let callbackInput = '';
+    
+    // Treatment chat states
+    let showTreatmentChat = false;
+    let treatmentChatInput = '';
+    let treatmentChatMessages = [];
+    let treatmentUserEmail = '';
+    let selectedTreatmentOption = null;
     
     // Lightweight CSS (minified for performance)
     const styles = `
@@ -78,13 +106,19 @@
         .flossy-widget::-webkit-scrollbar{width:6px}
         .flossy-widget::-webkit-scrollbar-track{background:#f1f1f1}
         .flossy-widget::-webkit-scrollbar-thumb{background:#c1c1c1;border-radius:3px}
-        .flossy-form-field{margin:10px 0;padding:12px 16px;border:2px solid #e5e7eb;border-radius:12px;font-size:16px;transition:all 0.3s ease;width:100%}
-        .flossy-form-field:focus{outline:none;border-color:${botConfig.themeColor};box-shadow:0 0 0 3px ${botConfig.themeColor}20;transform:scale(1.02)}
+        .flossy-form-field{margin:10px 0;padding:10px 12px;border:2px solid #e5e7eb;border-radius:12px;font-size:14px;transition:all 0.2s ease;width:100%;background:white;outline:none;color:#374151;min-width:200px}
+        .flossy-form-field:focus{outline:none;border-color:${botConfig.themeColor};box-shadow:0 0 0 2px ${botConfig.themeColor}20;transform:scale(1.01)}
+        .flossy-form-container{display:flex;gap:8px;align-items:center;width:100%;max-width:100%}
+        .flossy-form-field-wrapper{flex:1;min-width:0}
+        .flossy-form-send-btn{width:40px;height:40px;border-radius:12px;background:${botConfig.themeColor};color:white;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s ease;transform:scale(1);box-shadow:0 1px 3px rgba(0,0,0,0.1);flex-shrink:0}
+        .flossy-form-send-btn:hover{transform:scale(1.05);box-shadow:0 2px 6px rgba(0,0,0,0.15)}
         .flossy-submit-btn{background:${botConfig.themeColor};color:white;border:none;padding:10px 20px;border-radius:12px;cursor:pointer;font-weight:bold;transition:all 0.3s ease}
         .flossy-submit-btn:hover{opacity:0.9;transform:translateY(-1px)}
         .flossy-submit-btn:disabled{opacity:0.6;cursor:not-allowed;transform:none}
         .flossy-close-btn:hover{background:rgba(255,255,255,0.3) !important}
         .flossy-send-btn:hover{transform:scale(1.05);box-shadow:0 4px 8px rgba(0,0,0,0.15) !important}
+        .flossy-input:focus{border-color:${botConfig.themeColor} !important;box-shadow:0 0 0 2px ${botConfig.themeColor}20 !important;transform:scale(1.01) !important}
+        .flossy-send-btn:hover{transform:scale(1.05) !important;box-shadow:0 2px 6px rgba(0,0,0,0.15) !important}
     `;
     
     // Inject styles efficiently
@@ -152,14 +186,13 @@
     
     // Create input area
     const inputArea = document.createElement('div');
-    inputArea.style.cssText = `padding:24px;border-top:1px solid #f3f4f6;background:white;`;
+    inputArea.style.cssText = `padding:16px;border-top:1px solid #f3f4f6;background:white;display:none;`;
     inputArea.innerHTML = `
-        <div style="display:flex;gap:12px;align-items:center;">
-            <div style="flex:1;background:#f3f4f6;border-radius:20px;padding:12px 16px;">
-                <input class="flossy-input" type="text" placeholder="Type your message..." style="width:100%;background:transparent;border:none;outline:none;font-size:14px;color:#374151;" />
-            </div>
-            <button class="flossy-send-btn" style="background:${botConfig.themeColor};color:white;border:none;padding:12px;border-radius:50%;cursor:pointer;width:40px;height:40px;display:flex;align-items:center;justify-content:center;transition:all 0.2s;box-shadow:0 2px 4px rgba(0,0,0,0.1);">
-                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width:2">
+        <div style="display:flex;gap:8px;align-items:center;">
+            <input class="flossy-input" type="text" placeholder="Type your message here..." 
+                   style="flex:1;padding:8px 12px;border:2px solid #e5e7eb;border-radius:12px;font-size:12px;color:#374151;background:white;outline:none;transition:all 0.2s ease;transform:scale(1);" />
+            <button class="flossy-send-btn" style="width:40px;height:40px;border-radius:12px;background:${botConfig.themeColor};color:white;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s ease;transform:scale(1);box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width:2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" transform="rotate(90 12 12)"/>
                 </svg>
             </button>
@@ -187,6 +220,19 @@
         messagesContainer.innerHTML = '';
         currentFormStep = -1;
         formData = {};
+        currentWorkflow = null;
+        selectedTreatment = null;
+        showTreatmentOptions = false;
+        showCallbackForm = false;
+        callbackData = {};
+        currentCallbackField = -1;
+        showCallbackInput = false;
+        callbackInput = '';
+        showTreatmentChat = false;
+        treatmentChatInput = '';
+        treatmentChatMessages = [];
+        treatmentUserEmail = '';
+        selectedTreatmentOption = null;
         
         botConfig.openingMessages.forEach((msg, index) => {
             setTimeout(() => {
@@ -268,7 +314,12 @@
         optionsDiv.style.cssText = 'margin-bottom:16px;';
         
         let optionsHTML = '<div style="margin-bottom:12px;font-weight:bold;color:#374151;">Please select an option:</div>';
-        botConfig.appointmentOptions.forEach(option => {
+        const appointmentOptions = [
+            { text: 'Request an appointment', type: 'appointment' },
+            { text: 'Learn about treatments', type: 'treatment' },
+            { text: 'Request a callback', type: 'callback' }
+        ];
+        appointmentOptions.forEach(option => {
             optionsHTML += `
                 <div class="flossy-option" data-type="${option.type}" data-text="${option.text}" 
                      style="background:#f8fafc;border:1px solid #e5e7eb;padding:12px;border-radius:12px;margin-bottom:8px;cursor:pointer;transition:all 0.3s ease;display:flex;align-items:center;gap:12px;">
@@ -317,12 +368,33 @@
         addUserMessage(text);
         
         if (type === 'appointment') {
+            currentWorkflow = 'appointment';
             const typingDiv = showTypingIndicator();
             setTimeout(() => {
                 hideTypingIndicator();
                 addBotMessage(botConfig.appointmentGreeting);
                 setTimeout(() => {
                     startAppointmentFlow();
+                }, 1000);
+            }, 1500);
+        } else if (type === 'treatment') {
+            currentWorkflow = 'treatment';
+            const typingDiv = showTypingIndicator();
+            setTimeout(() => {
+                hideTypingIndicator();
+                addBotMessage('Hi! I\'m here to answer questions about our dental treatments. What treatment are you interested in learning more about?');
+                setTimeout(() => {
+                    showTreatmentOptionsUI();
+                }, 1000);
+            }, 1500);
+        } else if (type === 'callback') {
+            currentWorkflow = 'callback';
+            const typingDiv = showTypingIndicator();
+            setTimeout(() => {
+                hideTypingIndicator();
+                addBotMessage('You\'d like a callback from our team—happy to arrange that! Could you please provide your name and the best phone number to reach you?');
+                setTimeout(() => {
+                    startCallbackFlow();
                 }, 1000);
             }, 1500);
         }
@@ -336,7 +408,11 @@
     
     function showNextFormField() {
         if (currentFormStep >= botConfig.appointmentFlow.fields.length) {
-            completeAppointment();
+            if (currentWorkflow === 'treatment') {
+                completeTreatment();
+            } else {
+                completeAppointment();
+            }
             return;
         }
         
@@ -359,14 +435,24 @@
         }
         
         fieldDiv.innerHTML = `
-            <input class="flossy-form-field" type="${inputType}" placeholder="${placeholder}" 
-                   ${field.required ? 'required' : ''}>
+            <div class="flossy-form-container">
+                <div class="flossy-form-field-wrapper">
+                    <input class="flossy-form-field" type="${inputType}" placeholder="${placeholder}" 
+                           ${field.required ? 'required' : ''}>
+                </div>
+                <button class="flossy-form-send-btn" type="button">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width:2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" transform="rotate(90 12 12)"/>
+                    </svg>
+                </button>
+            </div>
         `;
         
         messagesContainer.appendChild(fieldDiv);
         scrollToBottom();
         
         const input = fieldDiv.querySelector('.flossy-form-field');
+        const sendBtn = fieldDiv.querySelector('.flossy-form-send-btn');
         
         // Focus the input
         setTimeout(() => input.focus(), 100);
@@ -395,14 +481,30 @@
                 
                 let response = '';
                 if (field.name === 'fullName') {
-                    response = `Thanks ${value}! 😊`;
+                    if (currentWorkflow === 'treatment') {
+                        response = `Thanks ${value}! 😊`;
+                    } else {
+                        response = `Thanks ${value}! 😊`;
+                    }
                 } else if (field.name === 'contact') {
-                    response = `Perfect! I have your email as ${value}.`;
-                    if (botConfig.privacyPolicyUrl) {
-                        response += `\n\nWe take privacy and your data very seriously and do not share it. See our <a href="${botConfig.privacyPolicyUrl}" target="_blank" style="color:${botConfig.themeColor};">privacy policy</a>.`;
+                    if (currentWorkflow === 'treatment') {
+                        response = `Perfect! I've got your contact info.`;
+                        if (botConfig.privacyPolicyUrl) {
+                            response += `\n\nWe take privacy and your data very seriously and do not share it. See our <a href="${botConfig.privacyPolicyUrl}" target="_blank" style="color:${botConfig.themeColor};">privacy policy</a>.`;
+                        }
+                        response += `\n\nI'll also need your phone number for follow-up.`;
+                    } else {
+                        response = `Perfect! I have your email as ${value}.`;
+                        if (botConfig.privacyPolicyUrl) {
+                            response += `\n\nWe take privacy and your data very seriously and do not share it. See our <a href="${botConfig.privacyPolicyUrl}" target="_blank" style="color:${botConfig.themeColor};">privacy policy</a>.`;
+                        }
                     }
                 } else if (field.name === 'phone') {
-                    response = `Great! I have your phone number.`;
+                    if (currentWorkflow === 'treatment') {
+                        response = `Thank you! We'll send the details shortly. If you'd like a call from our team, just type 'callback.'`;
+                    } else {
+                        response = `Great! I have your phone number.`;
+                    }
                 } else if (field.name === 'preferredDate') {
                     response = `Excellent! You'd like to book for ${value}.`;
                 } else if (field.name === 'preferredTime') {
@@ -413,14 +515,28 @@
                 
                 // Move to next field
                 currentFormStep++;
-                setTimeout(() => {
-                    showNextFormField();
-                }, 1000);
+                
+                // For treatment flow, after phone field, complete treatment first
+                if (currentWorkflow === 'treatment' && field.name === 'phone') {
+                    setTimeout(() => {
+                        completeTreatment();
+                    }, 1000);
+                } else {
+                    setTimeout(() => {
+                        showNextFormField();
+                    }, 1000);
+                }
             }, 800);
         }
         
         input.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && e.target.value.trim()) {
+                submitField();
+            }
+        });
+        
+        sendBtn.addEventListener('click', () => {
+            if (input.value.trim()) {
                 submitField();
             }
         });
@@ -444,13 +560,16 @@
             
             if (response.success) {
                 // Show confirmation message
-                const confirmationMessage = botConfig.confirmationMessages.success
+                const confirmationMessage = '✅ I\'ve reserved your appointment for [chosen date/time].\nYou\'ll receive a confirmation email shortly.\nWould you also like directions to our clinic?'
                     .replace('[chosen date/time]', `${formData.preferredDate} at ${formData.preferredTime}`);
                 
                 addBotMessage(confirmationMessage);
                 
                 setTimeout(() => {
                     addBotMessage("Is there anything else I can help you with today? 😊");
+                    setTimeout(() => {
+                        showAppointmentOptions();
+                    }, 1000);
                 }, 2000);
             } else if (response.conflict) {
                 // Show conflict message and suggestions
@@ -465,6 +584,468 @@
                 
                 setTimeout(() => {
                     addBotMessage("Would you like to try booking again?");
+                    showAppointmentOptions();
+                }, 2000);
+            }
+        });
+    }
+    
+    function completeTreatment() {
+        const typingDiv = showTypingIndicator();
+        
+        // Send to treatment webhook
+        sendToTreatmentWebhook({
+            botId: botConfig.botId,
+            botName: botConfig.name,
+            type: 'brochure_request',
+            treatment: {
+                name: selectedTreatment.name,
+                description: selectedTreatment.description,
+                brochureUrl: selectedTreatment.brochureUrl || '',
+                hasBrochureUrl: !!(selectedTreatment.brochureUrl && selectedTreatment.brochureUrl.trim())
+            },
+            customer: {
+                email: formData.contact,
+                name: formData.fullName,
+                phone: formData.phone
+            },
+            company: {
+                name: botConfig.companyName,
+                ownerEmail: botConfig.companyOwnerEmail,
+                phone: botConfig.companyPhone || '',
+                website: botConfig.companyWebsite || '',
+                address: '',
+                tagline: '',
+                logo: ''
+            }
+        }, (response) => {
+            hideTypingIndicator();
+            
+            if (response.success) {
+                addBotMessage("✅ Perfect! I've sent you the brochure details. Our team will contact you shortly with more information.");
+                
+                setTimeout(() => {
+                    addBotMessage("If you'd like a call from our team, just type 'callback.'");
+                    setTimeout(() => {
+                        showCallbackInputField();
+                    }, 1000);
+                }, 2000);
+            } else {
+                addBotMessage("❌ " + (response.message || "Sorry, there was an error sending the brochure. Please try again."));
+                
+                setTimeout(() => {
+                    addBotMessage("Would you like to try again?");
+                    showAppointmentOptions();
+                }, 2000);
+            }
+        });
+    }
+    
+    // Treatment workflow functions
+    function showTreatmentOptionsUI() {
+        const optionsDiv = document.createElement('div');
+        optionsDiv.className = 'flossy-slide-in';
+        optionsDiv.style.cssText = 'margin-bottom:16px;';
+        
+        let optionsHTML = '<div style="margin-bottom:12px;font-weight:bold;color:#374151;">Please select a treatment:</div>';
+        botConfig.treatmentFlow.options.forEach((option, index) => {
+            optionsHTML += `
+                <div class="flossy-treatment-option" data-treatment='${JSON.stringify(option)}' 
+                     style="background:#f8fafc;border:1px solid #e5e7eb;padding:12px;border-radius:12px;margin-bottom:8px;cursor:pointer;transition:all 0.3s ease;display:flex;align-items:flex-start;gap:12px;">
+                    <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${botConfig.themeColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;">
+                        <div style="width:12px;height:12px;border-radius:50%;background:${botConfig.themeColor};opacity:0;transform:scale(0);transition:all 0.2s ease;"></div>
+                    </div>
+                    <div style="flex:1;">
+                        <div style="font-size:14px;color:#374151;font-weight:500;margin-bottom:2px;">${option.name}</div>
+                        <div style="font-size:12px;color:#6b7280;">${option.description}</div>
+                    </div>
+                </div>
+            `;
+        });
+        optionsDiv.innerHTML = optionsHTML;
+        messagesContainer.appendChild(optionsDiv);
+        scrollToBottom();
+        
+        // Add event listeners
+        optionsDiv.querySelectorAll('.flossy-treatment-option').forEach(option => {
+            option.addEventListener('click', function() {
+                const treatment = JSON.parse(this.getAttribute('data-treatment'));
+                selectTreatment(treatment);
+            });
+            option.addEventListener('mouseenter', function() {
+                this.style.borderColor = '#d1d5db';
+                this.style.transform = 'scale(1.02)';
+                this.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+                const innerCircle = this.querySelector('div div');
+                innerCircle.style.opacity = '1';
+                innerCircle.style.transform = 'scale(1)';
+            });
+            option.addEventListener('mouseleave', function() {
+                this.style.borderColor = '#e5e7eb';
+                this.style.transform = 'scale(1)';
+                this.style.boxShadow = 'none';
+                const innerCircle = this.querySelector('div div');
+                innerCircle.style.opacity = '0';
+                innerCircle.style.transform = 'scale(0)';
+            });
+        });
+    }
+    
+    function selectTreatment(treatment) {
+        selectedTreatment = treatment;
+        
+        // Remove treatment options
+        const optionsDiv = messagesContainer.querySelector('.flossy-slide-in:last-child');
+        if (optionsDiv) optionsDiv.remove();
+        
+        addUserMessage(treatment.name);
+        
+        // Show treatment info and options
+        const typingDiv = showTypingIndicator();
+        setTimeout(() => {
+            hideTypingIndicator();
+            addBotMessage(`${treatment.description}. Would you like me to send you a detailed brochure via email or help you schedule a free consultation with our dentist?`);
+            
+            setTimeout(() => {
+                showTreatmentActionOptions();
+            }, 1000);
+        }, 1500);
+    }
+    
+    function showTreatmentActionOptions() {
+        const optionsDiv = document.createElement('div');
+        optionsDiv.className = 'flossy-slide-in';
+        optionsDiv.style.cssText = 'margin-bottom:16px;';
+        
+        let optionsHTML = '<div style="margin-bottom:12px;font-weight:bold;color:#374151;">Please select an option:</div>';
+        optionsHTML += `
+            <div class="flossy-treatment-action" data-action="brochure" 
+                 style="background:#f8fafc;border:1px solid #e5e7eb;padding:12px;border-radius:12px;margin-bottom:8px;cursor:pointer;transition:all 0.3s ease;display:flex;align-items:center;gap:12px;">
+                <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${botConfig.themeColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <div style="width:12px;height:12px;border-radius:50%;background:${botConfig.themeColor};opacity:0;transform:scale(0);transition:all 0.2s ease;"></div>
+                </div>
+                <span style="font-size:14px;color:#374151;font-weight:500;">Send me the brochure</span>
+            </div>
+            <div class="flossy-treatment-action" data-action="consultation" 
+                 style="background:#f8fafc;border:1px solid #e5e7eb;padding:12px;border-radius:12px;margin-bottom:8px;cursor:pointer;transition:all 0.3s ease;display:flex;align-items:center;gap:12px;">
+                <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${botConfig.themeColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <div style="width:12px;height:12px;border-radius:50%;background:${botConfig.themeColor};opacity:0;transform:scale(0);transition:all 0.2s ease;"></div>
+                </div>
+                <span style="font-size:14px;color:#374151;font-weight:500;">Schedule a consultation</span>
+            </div>
+        `;
+        optionsDiv.innerHTML = optionsHTML;
+        messagesContainer.appendChild(optionsDiv);
+        scrollToBottom();
+        
+        // Add event listeners
+        optionsDiv.querySelectorAll('.flossy-treatment-action').forEach(option => {
+            option.addEventListener('click', function() {
+                const action = this.getAttribute('data-action');
+                handleTreatmentAction(action);
+            });
+            option.addEventListener('mouseenter', function() {
+                this.style.borderColor = '#d1d5db';
+                this.style.transform = 'scale(1.02)';
+                this.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+                const innerCircle = this.querySelector('div div');
+                innerCircle.style.opacity = '1';
+                innerCircle.style.transform = 'scale(1)';
+            });
+            option.addEventListener('mouseleave', function() {
+                this.style.borderColor = '#e5e7eb';
+                this.style.transform = 'scale(1)';
+                this.style.boxShadow = 'none';
+                const innerCircle = this.querySelector('div div');
+                innerCircle.style.transform = 'scale(0)';
+            });
+        });
+    }
+    
+    function handleTreatmentAction(action) {
+        // Remove action options
+        const optionsDiv = messagesContainer.querySelector('.flossy-slide-in:last-child');
+        if (optionsDiv) optionsDiv.remove();
+        
+        addUserMessage(action === 'brochure' ? 'Send me the brochure' : 'Schedule a consultation');
+        
+        if (action === 'brochure') {
+            // Use existing form data if available, otherwise collect it
+            if (formData.fullName && formData.contact && formData.phone) {
+                // We already have the details, proceed directly
+                const typingDiv = showTypingIndicator();
+                setTimeout(() => {
+                    hideTypingIndicator();
+                    addBotMessage('Perfect! I have your details. Let me send you the brochure information.');
+                    setTimeout(() => {
+                        completeTreatment();
+                    }, 1000);
+                }, 1500);
+            } else {
+                // Collect missing details
+                const typingDiv = showTypingIndicator();
+                setTimeout(() => {
+                    hideTypingIndicator();
+                    addBotMessage('Please share your name and preferred contact method so we can follow up with information tailored to your needs.');
+                    setTimeout(() => {
+                        startTreatmentFormFlow();
+                    }, 1000);
+                }, 1500);
+            }
+        } else if (action === 'consultation') {
+            // Switch to appointment booking
+            const typingDiv = showTypingIndicator();
+            setTimeout(() => {
+                hideTypingIndicator();
+                addBotMessage(`Great! I'll help you schedule a consultation for ${selectedTreatment.name}. Let me switch you to our appointment booking system.`);
+                setTimeout(() => {
+                    currentWorkflow = 'appointment';
+                    addBotMessage(botConfig.appointmentGreeting);
+                    setTimeout(() => {
+                        startAppointmentFlow();
+                    }, 1000);
+                }, 1000);
+            }, 1500);
+        }
+    }
+    
+    function startTreatmentFormFlow() {
+        currentFormStep = 0;
+        formData = {};
+        showNextFormField();
+    }
+    
+    // Callback workflow functions
+    function startCallbackFlow() {
+        currentCallbackField = 0;
+        callbackData = {};
+        showNextCallbackField();
+    }
+    
+    function showNextCallbackField() {
+        if (currentCallbackField >= botConfig.callbackFlow.fields.length) {
+            completeCallback();
+            return;
+        }
+        
+        const field = botConfig.callbackFlow.fields[currentCallbackField];
+        const fieldDiv = document.createElement('div');
+        fieldDiv.className = 'flossy-form-container flossy-slide-in';
+        fieldDiv.style.cssText = 'margin-bottom:16px;';
+        
+        let inputType = field.type;
+        let placeholder = `Enter your ${field.label.toLowerCase()}`;
+        
+        if (field.type === 'tel') {
+            placeholder = '+1 (555) 123-4567';
+        }
+        
+        fieldDiv.innerHTML = `
+            <div class="flossy-form-container">
+                <div class="flossy-form-field-wrapper">
+                    <input class="flossy-form-field" type="${inputType}" placeholder="${placeholder}" 
+                           ${field.required ? 'required' : ''}>
+                </div>
+                <button class="flossy-form-send-btn" type="button">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width:2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" transform="rotate(90 12 12)"/>
+                    </svg>
+                </button>
+            </div>
+        `;
+        
+        messagesContainer.appendChild(fieldDiv);
+        scrollToBottom();
+        
+        const input = fieldDiv.querySelector('.flossy-form-field');
+        const sendBtn = fieldDiv.querySelector('.flossy-form-send-btn');
+        
+        // Focus the input
+        setTimeout(() => input.focus(), 100);
+        
+        function submitCallbackField() {
+            const value = input.value.trim();
+            if (!value && field.required) {
+                input.style.borderColor = '#ef4444';
+                input.focus();
+                return;
+            }
+            
+            // Store the value
+            callbackData[field.name] = value;
+            
+            // Remove the form field
+            fieldDiv.remove();
+            
+            // Add user message
+            addUserMessage(value);
+            
+            // Show bot response
+            const typingDiv = showTypingIndicator();
+            setTimeout(() => {
+                hideTypingIndicator();
+                
+                let response = '';
+                if (field.name === 'name') {
+                    response = `Thanks ${value}! 😊`;
+                } else if (field.name === 'email') {
+                    response = `Great! I've got your email: ${value}`;
+                } else if (field.name === 'phone') {
+                    response = `Perfect! I've got your contact info.`;
+                } else if (field.name === 'reason') {
+                    response = `Got it! ${value} is a great reason to call.`;
+                } else if (field.name === 'timing') {
+                    response = `Excellent! We've scheduled your callback for ${value}.`;
+                }
+                
+                addBotMessage(response);
+                
+                // Move to next field
+                currentCallbackField++;
+                setTimeout(() => {
+                    showNextCallbackField();
+                }, 1000);
+            }, 800);
+        }
+        
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && e.target.value.trim()) {
+                submitCallbackField();
+            }
+        });
+        
+        sendBtn.addEventListener('click', () => {
+            if (input.value.trim()) {
+                submitCallbackField();
+            }
+        });
+    }
+    
+    function showCallbackInputField() {
+        const inputDiv = document.createElement('div');
+        inputDiv.className = 'flossy-callback-input flossy-slide-in';
+        inputDiv.style.cssText = 'margin-bottom:16px;';
+        
+        inputDiv.innerHTML = `
+            <div class="flossy-form-container">
+                <div class="flossy-form-field-wrapper">
+                    <input class="flossy-form-field" type="text" placeholder="Type 'callback' to request a call back" 
+                           style="font-size:14px;padding:10px 12px;">
+                </div>
+                <button class="flossy-form-send-btn" type="button">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width:2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" transform="rotate(90 12 12)"/>
+                    </svg>
+                </button>
+            </div>
+        `;
+        
+        messagesContainer.appendChild(inputDiv);
+        scrollToBottom();
+        
+        const input = inputDiv.querySelector('.flossy-form-field');
+        const sendBtn = inputDiv.querySelector('.flossy-form-send-btn');
+        
+        // Focus the input
+        setTimeout(() => input.focus(), 100);
+        
+        function handleCallbackInput() {
+            const value = input.value.trim();
+            if (!value) return;
+            
+            // Remove the input field
+            inputDiv.remove();
+            
+            // Add user message
+            addUserMessage(value);
+            
+            const lowerMessage = value.toLowerCase();
+            
+            if (lowerMessage.includes('callback')) {
+                // Switch to callback flow
+                const typingDiv = showTypingIndicator();
+                setTimeout(() => {
+                    hideTypingIndicator();
+                    addBotMessage('You\'d like a callback from our team—happy to arrange that! Could you please provide your name and the best phone number to reach you?');
+                    setTimeout(() => {
+                        currentWorkflow = 'callback';
+                        startCallbackFlow();
+                    }, 1000);
+                }, 1000);
+            } else {
+                // Complete treatment flow
+                const typingDiv = showTypingIndicator();
+                setTimeout(() => {
+                    hideTypingIndicator();
+                    addBotMessage('Thank you for your interest! We\'ll be in touch soon with more information.');
+                    setTimeout(() => {
+                        addBotMessage('Is there anything else I can help you with today? 😊');
+                        setTimeout(() => {
+                            showAppointmentOptions();
+                        }, 1000);
+                    }, 2000);
+                }, 1000);
+            }
+        }
+        
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && e.target.value.trim()) {
+                handleCallbackInput();
+            }
+        });
+        
+        sendBtn.addEventListener('click', () => {
+            if (input.value.trim()) {
+                handleCallbackInput();
+            }
+        });
+    }
+    
+    function completeCallback() {
+        const typingDiv = showTypingIndicator();
+        
+        // Send to callback webhook
+        sendToCallbackWebhook({
+            botId: botConfig.botId,
+            botName: botConfig.name,
+            type: 'callback_request',
+            customer: {
+                name: callbackData.name,
+                phone: callbackData.phone,
+                email: callbackData.email
+            },
+            callback: {
+                reason: callbackData.reason,
+                preferredTime: callbackData.timing,
+                urgency: 'Normal',
+                status: 'pending'
+            },
+            company: {
+                name: botConfig.companyName,
+                ownerEmail: botConfig.companyOwnerEmail,
+                phone: botConfig.companyPhone || '',
+                website: botConfig.companyWebsite || '',
+                address: '',
+                tagline: '',
+                logo: ''
+            }
+        }, (response) => {
+            hideTypingIndicator();
+            
+            if (response.success) {
+                addBotMessage('We\'ve scheduled your callback for [chosen time]. One of our team members will be in touch. Thank you for reaching out!'.replace('[chosen time]', callbackData.timing));
+                
+                setTimeout(() => {
+                    addBotMessage("Is there anything else I can help you with today? 😊");
+                    setTimeout(() => {
+                        showAppointmentOptions();
+                    }, 1000);
+                }, 2000);
+            } else {
+                addBotMessage("❌ " + (response.message || "Sorry, there was an error scheduling your callback. Please try again."));
+                
+                setTimeout(() => {
+                    addBotMessage("Would you like to try scheduling again?");
                     showAppointmentOptions();
                 }, 2000);
             }
@@ -610,6 +1191,106 @@
         });
     }
     
+    function sendToTreatmentWebhook(data, callback) {
+        if (!botConfig.gmailBrochureUrl) {
+            console.log('No treatment webhook URL configured');
+            return;
+        }
+        
+        console.log('Sending treatment webhook:', data);
+        
+        fetch(botConfig.gmailBrochureUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data),
+            mode: 'cors'
+        })
+        .then(response => {
+            console.log('Treatment webhook response status:', response.status);
+            console.log('Treatment webhook response headers:', response.headers);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            // Check if response has content
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                return response.json();
+            } else {
+                // If no JSON content, return success response
+                console.log('No JSON response, treating as success');
+                return { success: true, message: 'Request processed successfully' };
+            }
+        })
+        .then(result => {
+            console.log('Treatment webhook result:', result);
+            if (callback) callback(result);
+        })
+        .catch(err => {
+            console.error('Treatment webhook error details:', err);
+            console.error('Error name:', err.name);
+            console.error('Error message:', err.message);
+            console.error('Error stack:', err.stack);
+            if (callback) {
+                callback({
+                    success: false,
+                    message: 'Network error: ' + err.message
+                });
+            }
+        });
+    }
+    
+    function sendToCallbackWebhook(data, callback) {
+        if (!botConfig.gmailCallbackUrl) {
+            console.log('No callback webhook URL configured');
+            return;
+        }
+        
+        console.log('Sending callback webhook:', data);
+        
+        fetch(botConfig.gmailCallbackUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data),
+            mode: 'cors'
+        })
+        .then(response => {
+            console.log('Callback webhook response status:', response.status);
+            console.log('Callback webhook response headers:', response.headers);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            // Check if response has content
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                return response.json();
+            } else {
+                // If no JSON content, return success response
+                console.log('No JSON response, treating as success');
+                return { success: true, message: 'Request processed successfully' };
+            }
+        })
+        .then(result => {
+            console.log('Callback webhook result:', result);
+            if (callback) callback(result);
+        })
+        .catch(err => {
+            console.error('Callback webhook error details:', err);
+            console.error('Error name:', err.name);
+            console.error('Error message:', err.message);
+            console.error('Error stack:', err.stack);
+            if (callback) {
+                callback({
+                    success: false,
+                    message: 'Network error: ' + err.message
+                });
+            }
+        });
+    }
+    
     // Event listeners
     bubble.addEventListener('click', toggleChat);
     bubble.addEventListener('mouseenter', () => {
@@ -636,11 +1317,24 @@
             addUserMessage(message);
             input.value = '';
             
-            const typingDiv = showTypingIndicator();
-            setTimeout(() => {
-                hideTypingIndicator();
-                addBotMessage(`Thanks for your message: "${message}". How else can I help?`);
-            }, 1000);
+            // Check if user typed "callback" during treatment flow
+            if (currentWorkflow === 'treatment' && message.toLowerCase().includes('callback')) {
+                const typingDiv = showTypingIndicator();
+                setTimeout(() => {
+                    hideTypingIndicator();
+                    addBotMessage('You\'d like a callback from our team—happy to arrange that! Could you please provide your name and the best phone number to reach you?');
+                    setTimeout(() => {
+                        currentWorkflow = 'callback';
+                        startCallbackFlow();
+                    }, 1000);
+                }, 1000);
+            } else {
+                const typingDiv = showTypingIndicator();
+                setTimeout(() => {
+                    hideTypingIndicator();
+                    addBotMessage(`Thanks for your message: "${message}". How else can I help?`);
+                }, 1000);
+            }
         }
     }
     
