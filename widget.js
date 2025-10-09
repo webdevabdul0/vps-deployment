@@ -34,9 +34,9 @@
         companyOwnerEmail: '',
         companyPhone: '',
         companyWebsite: '',
-        webhookUrl: 'https://n8n.flipthatpdf.site/webhook/appointment-booking',
-        gmailBrochureUrl: 'https://n8n.flipthatpdf.site/webhook/gmail-brochure',
-        gmailCallbackUrl: 'https://n8n.flipthatpdf.site/webhook/gmail-callback',
+        webhookUrl: 'https://n8n.flossly.ai/webhook/appointment-booking',
+        gmailBrochureUrl: 'https://n8n.flossly.ai/webhook/gmail-brochure',
+        gmailCallbackUrl: 'https://n8n.flossly.ai/webhook/gmail-callback',
         
         appointmentFlow: {
             fields: [
@@ -50,7 +50,7 @@
         
         treatmentFlow: {
             options: [],
-            webhookUrl: 'https://n8n.flipthatpdf.site/webhook/gmail-brochure'
+            webhookUrl: 'https://n8n.flossly.ai/webhook/gmail-brochure'
         },
         
         callbackFlow: {

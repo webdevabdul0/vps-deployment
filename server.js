@@ -20,7 +20,7 @@ const PORT = process.env.PORT || 3001; // Different port from n8n (usually 5678)
 // Google OAuth Configuration
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI = process.env.REDIRECT_URI || 'https://widget.flipthatpdf.site/oauth2/callback';
+const REDIRECT_URI = process.env.REDIRECT_URI || 'https://widget.flossly.ai/oauth2/callback';
 
 // Validate required environment variables
 if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
@@ -199,8 +199,8 @@ app.use(cors({
       'http://localhost:5173',
       'http://localhost:3000', 
       'http://localhost:4173',
-      'https://widget.flipthatpdf.site',
-      'https://flipthatpdf.site',
+      'https://widget.flossly.ai',
+      'https://flossly.ai',
       'http://213.165.249.205:3001',
       'https://213.165.249.205:3001'
     ];
@@ -802,7 +802,7 @@ app.post('/webhook/gmail-brochure', async (req, res) => {
     
     // Forward to n8n Gmail workflow
     try {
-      const n8nResponse = await axios.post('https://n8n.flipthatpdf.site/webhook/gmail-brochure', req.body, {
+      const n8nResponse = await axios.post('https://n8n.flossly.ai/webhook/gmail-brochure', req.body, {
         headers: {
           'Content-Type': 'application/json'
         },
@@ -861,7 +861,7 @@ app.post('/webhook/gmail-callback', async (req, res) => {
     
     // Forward to n8n Gmail workflow
     try {
-      const n8nResponse = await axios.post('https://n8n.flipthatpdf.site/webhook/gmail-callback', req.body, {
+      const n8nResponse = await axios.post('https://n8n.flossly.ai/webhook/gmail-callback', req.body, {
         headers: {
           'Content-Type': 'application/json'
         },
