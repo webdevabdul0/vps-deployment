@@ -20,7 +20,7 @@ const PORT = process.env.PORT || 3001; // Different port from n8n (usually 5678)
 // Google OAuth Configuration
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:3001/oauth2/callback';
+const REDIRECT_URI = process.env.REDIRECT_URI || 'https://widget.flipthatpdf.site/oauth2/callback';
 
 // Validate required environment variables
 if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
@@ -191,9 +191,28 @@ function generateSmartSuggestions(preferredDate, preferredTime, availableSlots, 
 // Middleware (optimized for performance)
 app.use(compression()); // Gzip compression
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:4173', '*'],
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:5173',
+      'http://localhost:3000', 
+      'http://localhost:4173',
+      'https://widget.flipthatpdf.site',
+      'https://flipthatpdf.site',
+      'http://213.165.249.205:3001',
+      'https://213.165.249.205:3001'
+    ];
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Allow all origins for now
+    }
+  },
+  methods: ['GET', 'POST', 'OPTIONS', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept'],
   credentials: true
 }));
 
