@@ -417,45 +417,74 @@
         }
         
         const field = botConfig.appointmentFlow.fields[currentFormStep];
-        const fieldDiv = document.createElement('div');
-        fieldDiv.className = 'flossy-form-container flossy-slide-in';
-        fieldDiv.style.cssText = 'margin-bottom:16px;';
         
-        let inputType = field.type;
-        let placeholder = `Enter your ${field.label.toLowerCase()}`;
-        
-        if (field.type === 'email') {
-            placeholder = 'example@email.com';
-        } else if (field.type === 'tel') {
-            placeholder = '+1 (555) 123-4567';
-        } else if (field.type === 'date') {
-            placeholder = 'Select date';
-        } else if (field.type === 'time') {
-            placeholder = 'Select time';
+        // Add friendly question before showing the field
+        let question = '';
+        if (field.name === 'fullName') {
+            question = 'Hello! 👋 I can help you book an appointment at our clinic. What\'s your full name?';
+        } else if (field.name === 'contact') {
+            question = 'Great! What\'s your email address?';
+        } else if (field.name === 'phone') {
+            question = 'Perfect! And what\'s the best phone number to reach you?';
+        } else if (field.name === 'preferredDate') {
+            question = 'Excellent! What date would work best for your appointment?';
+        } else if (field.name === 'preferredTime') {
+            question = 'Perfect! What time would you prefer?';
         }
         
-        fieldDiv.innerHTML = `
-            <div class="flossy-form-container">
-                <div class="flossy-form-field-wrapper">
-                    <input class="flossy-form-field" type="${inputType}" placeholder="${placeholder}" 
-                           ${field.required ? 'required' : ''}>
+        // Show the question first
+        if (question) {
+            addBotMessage(question);
+        }
+        
+        // Then show the field after a short delay
+        setTimeout(() => {
+            const fieldDiv = document.createElement('div');
+            fieldDiv.className = 'flossy-form-container flossy-slide-in';
+            fieldDiv.style.cssText = 'margin-bottom:16px;';
+            
+            let inputType = field.type;
+            let placeholder = `Enter your ${field.label.toLowerCase()}`;
+            
+            if (field.type === 'email') {
+                placeholder = 'example@email.com';
+            } else if (field.type === 'tel') {
+                placeholder = '+1 (555) 123-4567';
+            } else if (field.type === 'date') {
+                placeholder = 'Select date';
+            } else if (field.type === 'time') {
+                placeholder = 'Select time';
+            }
+            
+            fieldDiv.innerHTML = `
+                <div class="flossy-form-container">
+                    <div class="flossy-form-field-wrapper">
+                        <input class="flossy-form-field" type="${inputType}" placeholder="${placeholder}" 
+                               ${field.required ? 'required' : ''}>
+                    </div>
+                    <button class="flossy-form-send-btn" type="button">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width:2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" transform="rotate(90 12 12)"/>
+                        </svg>
+                    </button>
                 </div>
-                <button class="flossy-form-send-btn" type="button">
-                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width:2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" transform="rotate(90 12 12)"/>
-                    </svg>
-                </button>
-            </div>
-        `;
-        
-        messagesContainer.appendChild(fieldDiv);
-        scrollToBottom();
-        
-        const input = fieldDiv.querySelector('.flossy-form-field');
-        const sendBtn = fieldDiv.querySelector('.flossy-form-send-btn');
-        
-        // Focus the input
-        setTimeout(() => input.focus(), 100);
+            `;
+            
+            messagesContainer.appendChild(fieldDiv);
+            scrollToBottom();
+            
+            const input = fieldDiv.querySelector('.flossy-form-field');
+            const sendBtn = fieldDiv.querySelector('.flossy-form-send-btn');
+            
+            // Focus the input
+            setTimeout(() => input.focus(), 100);
+            
+            // Add event listeners and submit logic here
+            setupFieldEventListeners(input, sendBtn, field, fieldDiv);
+        }, 1000);
+    }
+    
+    function setupFieldEventListeners(input, sendBtn, field, fieldDiv) {
         
         function submitField() {
             const value = input.value.trim();
@@ -829,39 +858,68 @@
         }
         
         const field = botConfig.callbackFlow.fields[currentCallbackField];
-        const fieldDiv = document.createElement('div');
-        fieldDiv.className = 'flossy-form-container flossy-slide-in';
-        fieldDiv.style.cssText = 'margin-bottom:16px;';
         
-        let inputType = field.type;
-        let placeholder = `Enter your ${field.label.toLowerCase()}`;
-        
-        if (field.type === 'tel') {
-            placeholder = '+1 (555) 123-4567';
+        // Add friendly question before showing the field
+        let question = '';
+        if (field.name === 'name') {
+            question = 'Great! What\'s your full name?';
+        } else if (field.name === 'email') {
+            question = 'Perfect! What\'s your email address?';
+        } else if (field.name === 'phone') {
+            question = 'Excellent! What\'s the best phone number to reach you?';
+        } else if (field.name === 'reason') {
+            question = 'What\'s the reason for your callback request?';
+        } else if (field.name === 'timing') {
+            question = 'When would be the best time for us to call you?';
         }
         
-        fieldDiv.innerHTML = `
-            <div class="flossy-form-container">
-                <div class="flossy-form-field-wrapper">
-                    <input class="flossy-form-field" type="${inputType}" placeholder="${placeholder}" 
-                           ${field.required ? 'required' : ''}>
+        // Show the question first
+        if (question) {
+            addBotMessage(question);
+        }
+        
+        // Then show the field after a short delay
+        setTimeout(() => {
+            const fieldDiv = document.createElement('div');
+            fieldDiv.className = 'flossy-form-container flossy-slide-in';
+            fieldDiv.style.cssText = 'margin-bottom:16px;';
+            
+            let inputType = field.type;
+            let placeholder = `Enter your ${field.label.toLowerCase()}`;
+            
+            if (field.type === 'tel') {
+                placeholder = '+1 (555) 123-4567';
+            }
+            
+            fieldDiv.innerHTML = `
+                <div class="flossy-form-container">
+                    <div class="flossy-form-field-wrapper">
+                        <input class="flossy-form-field" type="${inputType}" placeholder="${placeholder}" 
+                               ${field.required ? 'required' : ''}>
+                    </div>
+                    <button class="flossy-form-send-btn" type="button">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width:2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" transform="rotate(90 12 12)"/>
+                        </svg>
+                    </button>
                 </div>
-                <button class="flossy-form-send-btn" type="button">
-                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width:2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" transform="rotate(90 12 12)"/>
-                    </svg>
-                </button>
-            </div>
-        `;
-        
-        messagesContainer.appendChild(fieldDiv);
-        scrollToBottom();
-        
-        const input = fieldDiv.querySelector('.flossy-form-field');
-        const sendBtn = fieldDiv.querySelector('.flossy-form-send-btn');
-        
-        // Focus the input
-        setTimeout(() => input.focus(), 100);
+            `;
+            
+            messagesContainer.appendChild(fieldDiv);
+            scrollToBottom();
+            
+            const input = fieldDiv.querySelector('.flossy-form-field');
+            const sendBtn = fieldDiv.querySelector('.flossy-form-send-btn');
+            
+            // Focus the input
+            setTimeout(() => input.focus(), 100);
+            
+            // Add event listeners and submit logic here
+            setupCallbackFieldEventListeners(input, sendBtn, field, fieldDiv);
+        }, 1000);
+    }
+    
+    function setupCallbackFieldEventListeners(input, sendBtn, field, fieldDiv) {
         
         function submitCallbackField() {
             const value = input.value.trim();
