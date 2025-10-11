@@ -421,7 +421,8 @@
         // Add friendly question before showing the field
         let question = '';
         if (field.name === 'fullName') {
-            question = 'Hello! 👋 I can help you book an appointment at our clinic. What\'s your full name?';
+            // Skip question for first field since it's already asked in appointmentGreeting
+            question = '';
         } else if (field.name === 'contact') {
             question = 'Great! What\'s your email address?';
         } else if (field.name === 'phone') {
@@ -862,7 +863,8 @@
         // Add friendly question before showing the field
         let question = '';
         if (field.name === 'name') {
-            question = 'Great! What\'s your full name?';
+            // Skip question for first field since it's already asked in callback greeting
+            question = '';
         } else if (field.name === 'email') {
             question = 'Perfect! What\'s your email address?';
         } else if (field.name === 'phone') {
