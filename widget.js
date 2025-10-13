@@ -590,7 +590,7 @@
             
             if (response.success) {
                 // Show confirmation message
-                const confirmationMessage = '✅ I\'ve reserved your appointment for [chosen date/time].\nYou\'ll receive a confirmation email shortly.\nWould you also like directions to our clinic?'
+                const confirmationMessage = '✅ I\'ve reserved your appointment for [chosen date/time].\nYou\'ll receive a confirmation email shortly.'
                     .replace('[chosen date/time]', `${formData.preferredDate} at ${formData.preferredTime}`);
                 
                 addBotMessage(confirmationMessage);
