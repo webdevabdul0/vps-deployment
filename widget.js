@@ -11,8 +11,14 @@
     if (window.flossyWidgetLoaded) return;
     window.flossyWidgetLoaded = true;
     
-    // Get configuration from embed script
-    const config = window.flossyConfig || {};
+    // Get botId from embed script
+    const embedConfig = window.flossyConfig || {};
+    const botId = embedConfig.botId;
+    
+    if (!botId) {
+        console.error('Flossy Widget: botId is required');
+        return;
+    }
     
     // Default configuration
     const defaultConfig = {
@@ -64,10 +70,33 @@
         }
     };
     
-    // Merge configurations
-    const botConfig = { ...defaultConfig, ...config };
+    // Load configuration from API
+    let botConfig = { ...defaultConfig };
     
-    // Widget state
+    // Fetch bot configuration from VPS API
+    async function loadBotConfig() {
+        try {
+            console.log(`Flossy Widget: Loading config for botId: ${botId}`);
+            const response = await fetch(`https://widget.flossly.ai/api/bot-config/${botId}`);
+            const data = await response.json();
+            
+            if (data.success && data.data) {
+                console.log('Flossy Widget: Config loaded successfully');
+                botConfig = { ...defaultConfig, ...data.data };
+                initializeWidget();
+            } else {
+                console.error('Flossy Widget: Failed to load config:', data.error);
+                initializeWidget(); // Initialize with default config
+            }
+        } catch (error) {
+            console.error('Flossy Widget: Error loading config:', error);
+            initializeWidget(); // Initialize with default config
+        }
+    }
+    
+    // Initialize widget with loaded config
+    function initializeWidget() {
+        // Widget state
     let isOpen = false;
     let initialized = false;
     let currentFormStep = -1;
@@ -1417,10 +1446,14 @@
     checkDeviceVisibility();
     document.body.appendChild(widget);
     
-    // Expose minimal API
-    window.flossyWidget = {
-        open: () => !isOpen && toggleChat(),
-        close: () => isOpen && toggleChat(),
-        toggle: toggleChat
-    };
+        // Expose minimal API
+        window.flossyWidget = {
+            open: () => !isOpen && toggleChat(),
+            close: () => isOpen && toggleChat(),
+            toggle: toggleChat
+        };
+    }
+    
+    // Start loading the bot configuration
+    loadBotConfig();
 })();
