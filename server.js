@@ -284,38 +284,49 @@ app.get('/api/bot-config/:botId', async (req, res) => {
     
     // Fetch from main API
     console.log(`Fetching fresh config for botId: ${botId} from dev.flossly.ai`);
-    const response = await axios.get(`https://dev.flossly.ai/api/crm/getBotConfig`, {
-      params: { botId },
-      timeout: 10000
-    });
-    
-    if (response.data.Success && response.data.Code === 0) {
-      const botConfig = response.data.Data;
-      
-      // Cache the config locally
-      data.bot_configs[botId] = {
-        ...botConfig,
-        cachedAt: new Date().toISOString()
-      };
-      writeData(data);
-      
-      // Add cache headers for better performance
-      res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=600');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      
-      res.json({
-        success: true,
-        data: botConfig,
-        botId: botId,
-        cached: false,
-        timestamp: new Date().toISOString()
+    try {
+      const response = await axios.get(`https://dev.flossly.ai/api/crm/getBotConfig`, {
+        params: { botId },
+        timeout: 10000
       });
       
-    } else {
+      if (response.data.Success && response.data.Code === 0) {
+        const botConfig = response.data.Data;
+        
+        // Cache the config locally
+        data.bot_configs[botId] = {
+          ...botConfig,
+          cachedAt: new Date().toISOString()
+        };
+        writeData(data);
+        
+        // Add cache headers for better performance
+        res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=600');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        
+        res.json({
+          success: true,
+          data: botConfig,
+          botId: botId,
+          cached: false,
+          timestamp: new Date().toISOString()
+        });
+        
+      } else {
+        console.log(`Main API returned error for botId: ${botId}`, response.data);
+        res.status(404).json({ 
+          success: false, 
+          error: 'Bot configuration not found in main API',
+          botId: botId
+        });
+      }
+    } catch (apiError) {
+      console.log(`Main API error for botId: ${botId}`, apiError.response?.data || apiError.message);
       res.status(404).json({ 
         success: false, 
         error: 'Bot configuration not found in main API',
-        botId: botId
+        botId: botId,
+        details: apiError.response?.data?.message || 'API authentication required'
       });
     }
     
@@ -350,6 +361,29 @@ app.get('/api/bot-config/:botId', async (req, res) => {
 
 // Note: Bot configurations are saved/updated via the main dev.flossly.ai API
 // This VPS deployment only serves configs for script shortening with caching
+
+// Temporary endpoint for testing (remove in production)
+app.post('/api/bot-config/:botId', (req, res) => {
+  const { botId } = req.params;
+  const config = req.body;
+  
+  try {
+    const data = readData();
+    data.bot_configs[botId] = {
+      ...config,
+      cachedAt: new Date().toISOString()
+    };
+    writeData(data);
+    
+    res.json({
+      success: true,
+      message: 'Test bot configuration saved',
+      botId: botId
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to save test config' });
+  }
+});
 
 // No encryption for now - store tokens as plain text
 
