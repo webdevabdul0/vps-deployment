@@ -45,7 +45,8 @@ if (!fs.existsSync(DATA_FILE)) {
   fs.writeFileSync(DATA_FILE, JSON.stringify({
     clients: {},
     google_tokens: {},
-    appointments: []
+    appointments: [],
+    bot_configs: {} // Store bot configurations by botId
   }, null, 2));
 }
 
@@ -248,6 +249,107 @@ app.get('/health', (req, res) => {
     memory: process.memoryUsage().rss / 1024 / 1024 // MB
   });
 });
+
+// Bot Configuration API Endpoints (for script shortening only)
+
+// Get bot configuration by botId (public endpoint for widget)
+// This fetches from the main dev.flossly.ai API and caches it
+app.get('/api/bot-config/:botId', async (req, res) => {
+  const { botId } = req.params;
+  
+  try {
+    // First check local cache
+    const data = readData();
+    const cachedConfig = data.bot_configs[botId];
+    
+    // Check if cache is still valid (5 minutes)
+    const now = Date.now();
+    const cacheValid = cachedConfig && 
+      cachedConfig.cachedAt && 
+      (now - new Date(cachedConfig.cachedAt).getTime()) < 5 * 60 * 1000;
+    
+    if (cacheValid) {
+      console.log(`Using cached config for botId: ${botId}`);
+      res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=600');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      
+      return res.json({
+        success: true,
+        data: cachedConfig,
+        botId: botId,
+        cached: true,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Fetch from main API
+    console.log(`Fetching fresh config for botId: ${botId} from dev.flossly.ai`);
+    const response = await axios.get(`https://dev.flossly.ai/api/crm/getBotConfig`, {
+      params: { botId },
+      timeout: 10000
+    });
+    
+    if (response.data.Success && response.data.Code === 0) {
+      const botConfig = response.data.Data;
+      
+      // Cache the config locally
+      data.bot_configs[botId] = {
+        ...botConfig,
+        cachedAt: new Date().toISOString()
+      };
+      writeData(data);
+      
+      // Add cache headers for better performance
+      res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=600');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      
+      res.json({
+        success: true,
+        data: botConfig,
+        botId: botId,
+        cached: false,
+        timestamp: new Date().toISOString()
+      });
+      
+    } else {
+      res.status(404).json({ 
+        success: false, 
+        error: 'Bot configuration not found in main API',
+        botId: botId
+      });
+    }
+    
+  } catch (error) {
+    console.error('Error fetching bot config:', error);
+    
+    // If main API fails, try to serve from cache as fallback
+    const data = readData();
+    const cachedConfig = data.bot_configs[botId];
+    
+    if (cachedConfig) {
+      console.log(`Serving stale cache for botId: ${botId} due to API error`);
+      res.setHeader('Cache-Control', 'public, max-age=60'); // Shorter cache for stale data
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      
+      return res.json({
+        success: true,
+        data: cachedConfig,
+        botId: botId,
+        cached: true,
+        stale: true,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch bot configuration from main API' 
+    });
+  }
+});
+
+// Note: Bot configurations are saved/updated via the main dev.flossly.ai API
+// This VPS deployment only serves configs for script shortening with caching
 
 // No encryption for now - store tokens as plain text
 
@@ -1106,6 +1208,7 @@ const server = app.listen(PORT, () => {
   console.log(`🔗 Appointment Webhook: http://localhost:${PORT}/webhook/appointment-booking`);
   console.log(`📧 Gmail Brochure Webhook: http://localhost:${PORT}/webhook/gmail-brochure`);
   console.log(`📞 Gmail Callback Webhook: http://localhost:${PORT}/webhook/gmail-callback`);
+  console.log(`🤖 Bot Config API: http://localhost:${PORT}/api/bot-config/{botId}`);
   console.log(`📊 Health Check: http://localhost:${PORT}/health`);
   console.log(`📈 Metrics: http://localhost:${PORT}/metrics`);
   

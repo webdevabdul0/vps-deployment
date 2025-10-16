@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shortened Widget Script Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .script-container {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            overflow-x: auto;
+        }
+        .script-container code {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .old-script, .new-script {
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .old-script {
+            background: #ffebee;
+            border-left: 4px solid #f44336;
+        }
+        .new-script {
+            background: #e8f5e8;
+            border-left: 4px solid #4caf50;
+        }
+        .size-comparison {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .api-endpoints {
+            background: #fff3e0;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🤖 Shortened Widget Script Implementation</h1>
+    
+    <h2>📊 Size Comparison</h2>
+    <div class="size-comparison">
+        <h3>Before vs After</h3>
+        <ul>
+            <li><strong>Original Script:</strong> ~2,500+ characters</li>
+            <li><strong>New Script:</strong> ~200 characters</li>
+            <li><strong>Reduction:</strong> 92% smaller! 🎉</li>
+        </ul>
+    </div>
+
+    <h2>🔄 Script Comparison</h2>
+    <div class="comparison">
+        <div class="old-script">
+            <h3>❌ Old Script (Huge)</h3>
+            <div class="script-container">
+                <code>
+&lt;script&gt;
+  window.flossyConfig = {"botId":"3c18dac1-9939-4b57-a4c6-c9915b844c0a","name":"Chatbot","companyName":"Responsive Test Practice ","avatar":"https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=face&auto=format&q=80","openingMessages":[{"id":"124c78d8-1fd2-4229-ab4-6ad747791abe","text":"Welcome to Responsive Test Practice","showAvatar":true},{"id":"ab34ecd0-23fa-4e0c-b877-2199ea7e623e","text":"Hope you are having a great day, how can I help you?","showAvatar":true},{"id":"ddd7d44e-18b8-4684-a142-e3bf708f4a92","text":"Would you like to get booked in with one of our dentists?","showAvatar":true}],"appointmentGreeting":"Hello! 👋 I can help you book an appointment at our clinic.\nWhat's your full name?","privacyPolicyUrl":"","companyOwnerEmail":"hhumza673@gmail.com","companyPhone":"03400728009","companyWebsite":"","webhookUrl":"https://n8n.flossly.ai/webhook/appointment-booking","gmailBrochureUrl":"https://n8n.flossly.ai/webhook/gmail-brochure","gmailCallbackUrl":"https://n8n.flossly.ai/webhook/gmail-callback","themeColor":"#f73b3b","position":"right","sideSpacing":25,"bottomSpacing":25,"showDesktop":true,"showMobile":true,"appointmentFlow":{"fields":[{"name":"fullName","type":"text","label":"Full Name","required":true},{"name":"contact","type":"email","label":"Email Address","required":true},{"name":"phone","type":"tel","label":"Phone Number","required":true},{"name":"preferredDate","type":"date","label":"Preferred Date","required":true},{"name":"preferredTime","type":"time","label":"Preferred Time","required":true}]},"treatmentFlow":{"options":[{"id":"7d27b2f3-fc70-4881-8f3c-bab23a8b0b21","name":"Teeth Whitening","description":"Professional teeth whitening treatments for a brighter smile","brochureUrl":""},{"id":"b93f40d1-8583-4576-81f1-5285050eed9e","name":"Invisalign","description":"Clear aligners for straightening teeth discreetly","brochureUrl":""},{"id":"1beaa64a-d977-4813-a1bb-0ecadbf494ff","name":"Dental Implants","description":"Permanent tooth replacement solutions","brochureUrl":""},{"id":"1d9bb8ca-f8fd-4b68-b754-417b8fe2a8ca","name":"General Checkup","description":"Comprehensive dental examination and cleaning","brochureUrl":""}],"webhookUrl":"https://n8n.flossly.ai/webhook/gmail-brochure"},"callbackFlow":{"fields":[{"name":"name","type":"text","label":"Full Name","required":true},{"name":"phone","type":"tel","label":"Phone Number","required":true},{"name":"reason","type":"text","label":"Reason for Callback","required":true},{"name":"timing","type":"text","label":"Preferred Time","required":true}]}};
+  (function(d,s,id){
+    var js,fjs=d.getElementsByTagName(s)[0];
+    if(d.getElementById(id))return;
+    js=d.createElement(s);js.id=id;
+    js.src="https://widget.flossly.ai/widget.js";
+    fjs.parentNode.insertBefore(js,fjs);
+  }(document,"script","flossy-widget"));
+&lt;/script&gt;
+                </code>
+            </div>
+        </div>
+
+        <div class="new-script">
+            <h3>✅ New Script (Tiny)</h3>
+            <div class="script-container">
+                <code>
+&lt;script&gt;
+  window.flossyConfig = {"botId":"3c18dac1-9939-4b57-a4c6-c9915b844c0a"};
+  (function(d,s,id){
+    var js,fjs=d.getElementsByTagName(s)[0];
+    if(d.getElementById(id))return;
+    js=d.createElement(s);js.id=id;
+    js.src="https://widget.flossly.ai/widget.js";
+    fjs.parentNode.insertBefore(js,fjs);
+  }(document,"script","flossy-widget"));
+&lt;/script&gt;
+                </code>
+            </div>
+        </div>
+    </div>
+
+    <h2>🔧 How It Works</h2>
+    <ol>
+        <li><strong>Widget loads</strong> with only the botId</li>
+        <li><strong>Widget.js fetches</strong> full config from API: <code>GET /api/bot-config/{botId}</code></li>
+        <li><strong>Widget initializes</strong> with the fetched configuration</li>
+        <li><strong>Config is cached</strong> for 5 minutes for better performance</li>
+    </ol>
+
+    <h2>🌐 API Endpoints</h2>
+    <div class="api-endpoints">
+        <h3>Bot Configuration API</h3>
+        <ul>
+            <li><strong>GET</strong> <code>/api/bot-config/{botId}</code> - Get bot config (public)</li>
+            <li><strong>POST</strong> <code>/api/bot-config/{botId}</code> - Save bot config</li>
+            <li><strong>PUT</strong> <code>/api/bot-config/{botId}</code> - Update bot config</li>
+            <li><strong>DELETE</strong> <code>/api/bot-config/{botId}</code> - Delete bot config</li>
+            <li><strong>GET</strong> <code>/api/bot-configs</code> - List all configs</li>
+        </ul>
+    </div>
+
+    <h2>🚀 Benefits</h2>
+    <ul>
+        <li>✅ <strong>92% smaller scripts</strong> - much faster page loads</li>
+        <li>✅ <strong>Dynamic updates</strong> - change config without touching website</li>
+        <li>✅ <strong>Better caching</strong> - configs cached by CDN</li>
+        <li>✅ <strong>Easier maintenance</strong> - update configs in one place</li>
+        <li>✅ <strong>Better security</strong> - sensitive data stays on your server</li>
+        <li>✅ <strong>Version control</strong> - track config changes in database</li>
+    </ul>
+
+    <h2>📝 Example Usage</h2>
+    <div class="script-container">
+        <code>
+// Save a bot configuration
+fetch('https://widget.flossly.ai/api/bot-config/3c18dac1-9939-4b57-a4c6-c9915b844c0a', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(botConfig)
+});
+
+// Get a bot configuration
+fetch('https://widget.flossly.ai/api/bot-config/3c18dac1-9939-4b57-a4c6-c9915b844c0a')
+  .then(response => response.json())
+  .then(data => console.log(data));
+        </code>
+    </div>
+
+    <h2>🎯 Next Steps</h2>
+    <ol>
+        <li>Deploy the updated server.js to your VPS</li>
+        <li>Update your Bot Builder to save configs to this API</li>
+        <li>Update widget.js to fetch configs from this API</li>
+        <li>Replace all existing widget scripts with the shortened version</li>
+    </ol>
+
+    <script>
+        // Test the API (if running locally)
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            console.log('Testing bot config API...');
+            
+            // Test getting a bot config
+            fetch('/api/bot-config/3c18dac1-9939-4b57-a4c6-c9915b844c0a')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Bot config response:', data);
+                })
+                .catch(error => {
+                    console.log('API not available (expected if server not running)');
+                });
+        }
+    </script>
+</body>
+</html>

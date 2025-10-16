@@ -1,0 +1,128 @@
+{
+  "botId": "3c18dac1-9939-4b57-a4c6-c9915b844c0a",
+  "name": "Chatbot",
+  "companyName": "Responsive Test Practice",
+  "avatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=face&auto=format&q=80",
+  "openingMessages": [
+    {
+      "id": "124c78d8-1fd2-4229-ab4-6ad747791abe",
+      "text": "Welcome to Responsive Test Practice",
+      "showAvatar": true
+    },
+    {
+      "id": "ab34ecd0-23fa-4e0c-b877-2199ea7e623e",
+      "text": "Hope you are having a great day, how can I help you?",
+      "showAvatar": true
+    },
+    {
+      "id": "ddd7d44e-18b8-4684-a142-e3bf708f4a92",
+      "text": "Would you like to get booked in with one of our dentists?",
+      "showAvatar": true
+    }
+  ],
+  "appointmentGreeting": "Hello! 👋 I can help you book an appointment at our clinic.\nWhat's your full name?",
+  "privacyPolicyUrl": "",
+  "companyOwnerEmail": "hhumza673@gmail.com",
+  "companyPhone": "03400728009",
+  "companyWebsite": "",
+  "webhookUrl": "https://n8n.flossly.ai/webhook/appointment-booking",
+  "gmailBrochureUrl": "https://n8n.flossly.ai/webhook/gmail-brochure",
+  "gmailCallbackUrl": "https://n8n.flossly.ai/webhook/gmail-callback",
+  "themeColor": "#f73b3b",
+  "position": "right",
+  "sideSpacing": 25,
+  "bottomSpacing": 25,
+  "showDesktop": true,
+  "showMobile": true,
+  "appointmentFlow": {
+    "fields": [
+      {
+        "name": "fullName",
+        "type": "text",
+        "label": "Full Name",
+        "required": true
+      },
+      {
+        "name": "contact",
+        "type": "email",
+        "label": "Email Address",
+        "required": true
+      },
+      {
+        "name": "phone",
+        "type": "tel",
+        "label": "Phone Number",
+        "required": true
+      },
+      {
+        "name": "preferredDate",
+        "type": "date",
+        "label": "Preferred Date",
+        "required": true
+      },
+      {
+        "name": "preferredTime",
+        "type": "time",
+        "label": "Preferred Time",
+        "required": true
+      }
+    ]
+  },
+  "treatmentFlow": {
+    "options": [
+      {
+        "id": "7d27b2f3-fc70-4881-8f3c-bab23a8b0b21",
+        "name": "Teeth Whitening",
+        "description": "Professional teeth whitening treatments for a brighter smile",
+        "brochureUrl": ""
+      },
+      {
+        "id": "b93f40d1-8583-4576-81f1-5285050eed9e",
+        "name": "Invisalign",
+        "description": "Clear aligners for straightening teeth discreetly",
+        "brochureUrl": ""
+      },
+      {
+        "id": "1beaa64a-d977-4813-a1bb-0ecadbf494ff",
+        "name": "Dental Implants",
+        "description": "Permanent tooth replacement solutions",
+        "brochureUrl": ""
+      },
+      {
+        "id": "1d9bb8ca-f8fd-4b68-b754-417b8fe2a8ca",
+        "name": "General Checkup",
+        "description": "Comprehensive dental examination and cleaning",
+        "brochureUrl": ""
+      }
+    ],
+    "webhookUrl": "https://n8n.flossly.ai/webhook/gmail-brochure"
+  },
+  "callbackFlow": {
+    "fields": [
+      {
+        "name": "name",
+        "type": "text",
+        "label": "Full Name",
+        "required": true
+      },
+      {
+        "name": "phone",
+        "type": "tel",
+        "label": "Phone Number",
+        "required": true
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "label": "Reason for Callback",
+        "required": true
+      },
+      {
+        "name": "timing",
+        "type": "text",
+        "label": "Preferred Time",
+        "required": true
+      }
+    ]
+  }
+}
