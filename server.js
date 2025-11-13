@@ -542,9 +542,18 @@ app.post('/api/flossly/appointment', async (req, res) => {
       const errorData = apiError.response?.data || {};
       
       // Handle 409 conflict
-      // Check if error is a string and contains conflict message, or if status is 409
-      const errorMessage = typeof errorData.error === 'string' ? errorData.error : 
-                          (typeof errorData.message === 'string' ? errorData.message : '');
+      // Extract error message from various possible locations in the response
+      let errorMessage = '';
+      if (typeof errorData.error === 'string') {
+        errorMessage = errorData.error;
+      } else if (typeof errorData.message === 'string' && errorData.message) {
+        errorMessage = errorData.message;
+      } else if (errorData.data && typeof errorData.data.message === 'string') {
+        errorMessage = errorData.data.message;
+      } else if (typeof errorData.error === 'object' && errorData.error !== null) {
+        errorMessage = JSON.stringify(errorData.error);
+      }
+      
       const isConflict = statusCode === 409 || 
                         (errorMessage && errorMessage.includes('already has an appointment'));
       
@@ -561,10 +570,7 @@ app.post('/api/flossly/appointment', async (req, res) => {
       }
       
       // Format error message for response
-      const finalErrorMessage = typeof errorData.error === 'string' ? errorData.error :
-                               (typeof errorData.message === 'string' ? errorData.message :
-                               (typeof errorData.error === 'object' ? JSON.stringify(errorData.error) :
-                               apiError.message || 'Failed to create appointment'));
+      const finalErrorMessage = errorMessage || apiError.message || 'Failed to create appointment';
       
       return res.status(statusCode).json({
         success: false,
