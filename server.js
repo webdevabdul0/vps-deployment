@@ -405,16 +405,25 @@ app.post('/api/flossly/appointment', async (req, res) => {
     const data = readData();
     const botConfig = data.bot_configs[botId];
     
-    if (!botConfig || !botConfig.dentistId) {
+    // Try to get dentistId from multiple sources
+    let dentistId = null;
+    
+    if (botConfig && botConfig.dentistId) {
+      dentistId = botConfig.dentistId;
+    } else if (data.bot_tokens && data.bot_tokens[botId] && data.bot_tokens[botId].dentistId) {
+      dentistId = data.bot_tokens[botId].dentistId;
+    }
+    
+    if (!dentistId) {
       console.error(`No dentistId found for botId: ${botId}`);
+      console.error('Bot config:', botConfig ? 'exists but no dentistId' : 'not found');
+      console.error('Bot tokens:', data.bot_tokens && data.bot_tokens[botId] ? 'exists' : 'not found');
       return res.status(400).json({
         success: false,
-        error: 'Bot configuration incomplete. dentistId is required.',
+        error: 'Bot configuration incomplete. dentistId is required. Please save the bot configuration again in Bot Builder.',
         statusCode: 400
       });
     }
-    
-    const dentistId = botConfig.dentistId;
     const duration = appointment.duration || 30;
     
     try {
