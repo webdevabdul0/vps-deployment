@@ -607,20 +607,93 @@
         // Get user's timezone
         const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         
-        // Send to webhook
-        sendToWebhook({
+        // Format date to YYYY-MM-DD if needed
+        let formattedDate = formData.preferredDate;
+        if (formData.preferredDate && !formData.preferredDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            // Convert from other formats to YYYY-MM-DD
+            const dateObj = new Date(formData.preferredDate);
+            formattedDate = dateObj.toISOString().split('T')[0];
+        }
+        
+        // Format time to HH:mm if needed (24-hour format)
+        let formattedTime = formData.preferredTime;
+        if (formData.preferredTime && !formData.preferredTime.match(/^\d{2}:\d{2}$/)) {
+            // Handle various time formats
+            const timeMatch = formData.preferredTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+            if (timeMatch) {
+                let hours = parseInt(timeMatch[1]);
+                const minutes = timeMatch[2];
+                const ampm = timeMatch[3];
+                
+                if (ampm) {
+                    if (ampm.toUpperCase() === 'PM' && hours !== 12) {
+                        hours += 12;
+                    } else if (ampm.toUpperCase() === 'AM' && hours === 12) {
+                        hours = 0;
+                    }
+                }
+                formattedTime = `${String(hours).padStart(2, '0')}:${minutes}`;
+            }
+        }
+        
+        // Split patient name into firstName and lastName
+        const patientName = formData.fullName || '';
+        const nameParts = patientName.trim().split(/\s+/);
+        const firstName = nameParts[0] || '-';
+        const lastName = nameParts.slice(1).join(' ') || '-';
+        
+        // Get treatment information if available
+        const treatmentName = selectedTreatment ? selectedTreatment.name : null;
+        const treatmentDuration = selectedTreatment ? (selectedTreatment.defaultDuration || 30) : 30;
+        
+        // Prepare appointment data in Flossly API format
+        const appointmentData = {
             type: 'appointment_booking',
             botId: botConfig.botId,
-            formData: formData,
+            // Patient information
+            patient: {
+                firstName: firstName,
+                lastName: lastName,
+                email: formData.contact || '',
+                mobile: formData.phone || ''
+            },
+            // Appointment information
+            appointment: {
+                date: formattedDate,
+                time: formattedTime,
+                duration: treatmentDuration, // in minutes
+                treatmentName: treatmentName,
+                notes: `Appointment booked via chatbot`
+            },
+            // Additional metadata
+            formData: formData, // Keep original for backward compatibility
             userTimezone: userTimezone,
             timestamp: new Date().toISOString()
-        }, (response) => {
+        };
+        
+        // Send to both n8n webhook (for Google Calendar) AND Flossly API
+        // First, send to n8n webhook (non-blocking)
+        if (botConfig.webhookUrl) {
+            sendToWebhook(appointmentData, (n8nResponse) => {
+                // Log n8n response but don't block on it
+                console.log('n8n webhook response:', n8nResponse);
+            });
+        }
+        
+        // Then, send to Flossly API endpoint
+        sendToFlosslyAPI(appointmentData, (response) => {
             hideTypingIndicator();
             
             if (response.success) {
                 // Show confirmation message
-                const confirmationMessage = '✅ I\'ve reserved your appointment for [chosen date/time].\nYou\'ll receive a confirmation email shortly.'
-                    .replace('[chosen date/time]', `${formData.preferredDate} at ${formData.preferredTime}`);
+                const dateDisplay = new Date(formattedDate).toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    year: 'numeric' 
+                });
+                const timeDisplay = formattedTime;
+                
+                const confirmationMessage = `✅ I've reserved your appointment for ${dateDisplay} at ${timeDisplay}.\n\nYou'll receive a confirmation email shortly.`;
                 
                 addBotMessage(confirmationMessage);
                 
@@ -630,16 +703,36 @@
                         showAppointmentOptions();
                     }, 1000);
                 }, 2000);
-            } else if (response.conflict) {
-                // Show conflict message and suggestions
-                addBotMessage("❌ " + response.message);
+            } else if (response.conflict || response.statusCode === 409) {
+                // Handle time slot conflict (409 error)
+                const dateDisplay = new Date(formattedDate).toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    year: 'numeric' 
+                });
+                const timeDisplay = formattedTime;
+                
+                const conflictMessage = `⚠️ This time slot is already booked. Please select a different time.\n\nThe selected time (${timeDisplay} on ${dateDisplay}) is not available.\n\nWould you like to try another time?`;
+                
+                addBotMessage(conflictMessage);
                 
                 setTimeout(() => {
-                    showAppointmentSuggestions(response.suggestions, response.availableSlots);
-                }, 1000);
+                    // Show suggestions if available
+                    if (response.suggestions && response.suggestions.length > 0) {
+                        showAppointmentSuggestions(response.suggestions, response.availableSlots);
+                    } else if (response.availableSlots && response.availableSlots.length > 0) {
+                        showAppointmentSuggestions([], response.availableSlots);
+                    } else {
+                        addBotMessage("Please select a different date and time for your appointment.");
+                        setTimeout(() => {
+                            showAppointmentOptions();
+                        }, 1000);
+                    }
+                }, 1500);
             } else {
                 // Show error message
-                addBotMessage("❌ " + (response.message || "Sorry, there was an error booking your appointment. Please try again."));
+                const errorMessage = response.message || "Sorry, there was an error booking your appointment. Please try again.";
+                addBotMessage("❌ " + errorMessage);
                 
                 setTimeout(() => {
                     addBotMessage("Would you like to try booking again?");
@@ -1200,31 +1293,116 @@
                 // Show confirmation
                 addUserMessage(`I'd like to book for ${selectedDate} at ${selectedTime}`);
                 
-                // Book the appointment
+                // Book the appointment using the same format as completeAppointment
                 const typingDiv = showTypingIndicator();
                 
                 // Get user's timezone
                 const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
                 
-                sendToWebhook({
+                // Format date and time
+                let formattedDate = selectedDate;
+                if (selectedDate && !selectedDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                    const dateObj = new Date(selectedDate);
+                    formattedDate = dateObj.toISOString().split('T')[0];
+                }
+                
+                let formattedTime = selectedTime;
+                if (selectedTime && !selectedTime.match(/^\d{2}:\d{2}$/)) {
+                    const timeMatch = selectedTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+                    if (timeMatch) {
+                        let hours = parseInt(timeMatch[1]);
+                        const minutes = timeMatch[2];
+                        const ampm = timeMatch[3];
+                        
+                        if (ampm) {
+                            if (ampm.toUpperCase() === 'PM' && hours !== 12) {
+                                hours += 12;
+                            } else if (ampm.toUpperCase() === 'AM' && hours === 12) {
+                                hours = 0;
+                            }
+                        }
+                        formattedTime = `${String(hours).padStart(2, '0')}:${minutes}`;
+                    }
+                }
+                
+                // Split patient name
+                const patientName = formData.fullName || '';
+                const nameParts = patientName.trim().split(/\s+/);
+                const firstName = nameParts[0] || '-';
+                const lastName = nameParts.slice(1).join(' ') || '-';
+                
+                // Get treatment information if available
+                const treatmentName = selectedTreatment ? selectedTreatment.name : null;
+                const treatmentDuration = selectedTreatment ? (selectedTreatment.defaultDuration || 30) : 30;
+                
+                // Prepare appointment data
+                const appointmentData = {
                     type: 'appointment_booking',
                     botId: botConfig.botId,
+                    patient: {
+                        firstName: firstName,
+                        lastName: lastName,
+                        email: formData.contact || '',
+                        mobile: formData.phone || ''
+                    },
+                    appointment: {
+                        date: formattedDate,
+                        time: formattedTime,
+                        duration: treatmentDuration,
+                        treatmentName: treatmentName,
+                        notes: `Appointment booked via chatbot`
+                    },
                     formData: formData,
                     userTimezone: userTimezone,
                     timestamp: new Date().toISOString()
-                }, (response) => {
+                };
+                
+                // Send to both n8n webhook (for Google Calendar) AND Flossly API
+                // First, send to n8n webhook (non-blocking)
+                if (botConfig.webhookUrl) {
+                    sendToWebhook(appointmentData, (n8nResponse) => {
+                        // Log n8n response but don't block on it
+                        console.log('n8n webhook response:', n8nResponse);
+                    });
+                }
+                
+                // Then, send to Flossly API endpoint
+                sendToFlosslyAPI(appointmentData, (response) => {
                     hideTypingIndicator();
                     
                     if (response.success) {
-                        addBotMessage("✅ Perfect! Your appointment has been booked successfully. You'll receive a confirmation email shortly.");
+                        const dateDisplay = new Date(formattedDate).toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric', 
+                            year: 'numeric' 
+                        });
+                        addBotMessage(`✅ Perfect! Your appointment has been booked successfully for ${dateDisplay} at ${formattedTime}. You'll receive a confirmation email shortly.`);
                         
                         setTimeout(() => {
                             addBotMessage("Is there anything else I can help you with today? 😊");
                         }, 2000);
+                    } else if (response.conflict || response.statusCode === 409) {
+                        const dateDisplay = new Date(formattedDate).toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric', 
+                            year: 'numeric' 
+                        });
+                        addBotMessage(`⚠️ This time slot (${formattedTime} on ${dateDisplay}) is already booked. Please select a different time.`);
+                        setTimeout(() => {
+                            if (response.suggestions && response.suggestions.length > 0) {
+                                showAppointmentSuggestions(response.suggestions, response.availableSlots);
+                            } else if (response.availableSlots && response.availableSlots.length > 0) {
+                                showAppointmentSuggestions([], response.availableSlots);
+                            } else {
+                                addBotMessage("Please select a different date and time.");
+                            }
+                        }, 1000);
                     } else {
                         addBotMessage("❌ Sorry, that time slot is no longer available. Please try another time.");
                         setTimeout(() => {
-                            showAppointmentSuggestions(response.suggestions, response.availableSlots);
+                            if (response.suggestions || response.availableSlots) {
+                                showAppointmentSuggestions(response.suggestions, response.availableSlots);
+                            }
                         }, 1000);
                     }
                 });
@@ -1265,7 +1443,16 @@
             },
             body: JSON.stringify(data)
         })
-        .then(response => response.json())
+        .then(async response => {
+            const result = await response.json();
+            
+            // Include HTTP status code in response for conflict detection
+            return {
+                ...result,
+                statusCode: response.status,
+                conflict: response.status === 409 || result.error?.includes('already has an appointment')
+            };
+        })
         .then(result => {
             if (callback) callback(result);
         })
@@ -1274,7 +1461,44 @@
             if (callback) {
                 callback({
                     success: false,
-                    message: 'Network error. Please try again.'
+                    message: 'Network error. Please try again.',
+                    statusCode: 0
+                });
+            }
+        });
+    }
+    
+    function sendToFlosslyAPI(data, callback) {
+        // Send to server endpoint that will handle Flossly API calls
+        const flosslyApiUrl = `https://widget.flossly.ai/api/flossly/appointment`;
+        
+        fetch(flosslyApiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        })
+        .then(async response => {
+            const result = await response.json();
+            
+            // Include HTTP status code in response for conflict detection
+            return {
+                ...result,
+                statusCode: response.status,
+                conflict: response.status === 409 || result.error?.includes('already has an appointment')
+            };
+        })
+        .then(result => {
+            if (callback) callback(result);
+        })
+        .catch(err => {
+            console.log('Flossly API error:', err);
+            if (callback) {
+                callback({
+                    success: false,
+                    message: 'Network error. Please try again.',
+                    statusCode: 0
                 });
             }
         });

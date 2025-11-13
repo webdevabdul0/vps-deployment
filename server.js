@@ -22,6 +22,9 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI || 'https://widget.flossly.ai/oauth2/callback';
 
+// Flossly API Configuration
+const FLOSSLY_API_BASE = process.env.FLOSSLY_API_BASE || 'https://dev.flossly.ai';
+
 // Validate required environment variables
 if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
   console.error('❌ Missing required environment variables:');
@@ -46,7 +49,8 @@ if (!fs.existsSync(DATA_FILE)) {
     clients: {},
     google_tokens: {},
     appointments: [],
-    bot_configs: {} // Store bot configurations by botId
+    bot_configs: {}, // Store bot configurations by botId
+    bot_tokens: {} // Store access tokens by botId for Flossly API calls
   }, null, 2));
 }
 
@@ -57,7 +61,7 @@ const readData = () => {
     return JSON.parse(data);
   } catch (error) {
     console.error('Error reading data file:', error);
-    return { clients: {}, google_tokens: {}, appointments: [] };
+    return { clients: {}, google_tokens: {}, appointments: [], bot_configs: {}, bot_tokens: {} };
   }
 };
 
@@ -283,9 +287,9 @@ app.get('/api/bot-config/:botId', async (req, res) => {
     }
     
     // Fetch from main API
-    console.log(`Fetching fresh config for botId: ${botId} from dev.flossly.ai`);
+    console.log(`Fetching fresh config for botId: ${botId} from ${FLOSSLY_API_BASE}`);
     try {
-      const response = await axios.get(`https://dev.flossly.ai/api/crm/getBotConfig`, {
+      const response = await axios.get(`${FLOSSLY_API_BASE}/api/crm/getBotConfig`, {
         params: { botId },
         timeout: 10000
       });
@@ -361,6 +365,253 @@ app.get('/api/bot-config/:botId', async (req, res) => {
 
 // Note: Bot configurations are saved/updated via the main dev.flossly.ai API
 // This VPS deployment only serves configs for script shortening with caching
+
+// Flossly API Appointment Endpoint
+// This endpoint handles appointment creation in Flossly API
+app.post('/api/flossly/appointment', async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    const { botId, patient, appointment } = req.body;
+    
+    if (!botId || !patient || !appointment) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: botId, patient, or appointment'
+      });
+    }
+    
+    console.log(`[${new Date().toISOString()}] Flossly API appointment request:`, {
+      botId,
+      patient: { firstName: patient.firstName, email: patient.email },
+      appointment: { date: appointment.date, time: appointment.time }
+    });
+    
+    // Get access token from bot config or stored tokens
+    // TODO: We need to store access token with botId when bot is configured
+    // For now, try to get from bot config or use a stored token mapping
+    const data = readData();
+    
+    // Check if we have stored access token for this botId
+    let accessToken = data.bot_tokens && data.bot_tokens[botId];
+    
+    if (!accessToken) {
+      // Try to get from bot config (if it was stored there)
+      const botConfig = data.bot_configs[botId];
+      if (botConfig && botConfig.accessToken) {
+        accessToken = botConfig.accessToken;
+      } else {
+        console.error(`No access token found for botId: ${botId}`);
+        return res.status(401).json({
+          success: false,
+          error: 'Access token not found for this bot. Please configure the bot with authentication.',
+          statusCode: 401
+        });
+      }
+    }
+    
+    try {
+      // Step 1: Get treatment duration (optional)
+      let duration = appointment.duration || 30;
+      if (appointment.treatmentName) {
+        try {
+          const treatmentsResponse = await axios.get(`${FLOSSLY_API_BASE}/api/diary/treatments`, {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            timeout: 10000
+          });
+          
+          if (treatmentsResponse.data.code === 0 && treatmentsResponse.data.data) {
+            const treatment = treatmentsResponse.data.data.find(
+              t => t.name === appointment.treatmentName
+            );
+            if (treatment && treatment.defaultDuration) {
+              duration = treatment.defaultDuration;
+            }
+          }
+        } catch (treatmentError) {
+          console.log('Could not fetch treatment duration, using default:', treatmentError.message);
+          // Continue with default duration
+        }
+      }
+      
+      // Step 2: Create patient
+      const patientResponse = await axios.post(`${FLOSSLY_API_BASE}/api/diary/patientCreate`, {
+        firstName: patient.firstName,
+        lastName: patient.lastName,
+        email: patient.email,
+        mobile: patient.mobile
+      }, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+      
+      if (patientResponse.data.code !== 0 || !patientResponse.data.data) {
+        throw new Error(patientResponse.data.message || 'Failed to create patient');
+      }
+      
+      const patientId = patientResponse.data.data.id;
+      console.log(`Patient created with ID: ${patientId}`);
+      
+      // Step 3: Get user profile to get dentistId (userId)
+      let dentistId;
+      try {
+        const profileResponse = await axios.get(`${FLOSSLY_API_BASE}/api/auth/profile`, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 10000
+        });
+        
+        if (profileResponse.data.success && profileResponse.data.code === 0) {
+          dentistId = profileResponse.data.data.id; // userId is the dentistId
+        }
+      } catch (profileError) {
+        console.error('Could not fetch user profile:', profileError.message);
+        // We might need dentistId from bot config or another source
+      }
+      
+      if (!dentistId) {
+        // Try to get from bot config
+        const botConfig = data.bot_configs[botId];
+        if (botConfig && botConfig.dentistId) {
+          dentistId = botConfig.dentistId;
+        } else {
+          throw new Error('Could not determine dentistId. Please ensure bot is properly configured.');
+        }
+      }
+      
+      // Step 4: Create appointment
+      const appointmentResponse = await axios.post(`${FLOSSLY_API_BASE}/api/diary/appointmentCreate`, {
+        dentistId: dentistId,
+        patientId: patientId,
+        date: appointment.date,
+        time: appointment.time,
+        duration: duration,
+        treatmentName: appointment.treatmentName || null,
+        notes: appointment.notes || 'Appointment booked via chatbot'
+      }, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+      
+      const responseTime = Date.now() - startTime;
+      
+      if (appointmentResponse.data.code === 0) {
+        console.log(`Appointment created successfully:`, appointmentResponse.data.data);
+        
+        return res.json({
+          success: true,
+          message: 'Appointment created successfully',
+          data: appointmentResponse.data.data,
+          responseTime: `${responseTime}ms`,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        throw new Error(appointmentResponse.data.message || 'Failed to create appointment');
+      }
+      
+    } catch (apiError) {
+      console.error('Flossly API error:', apiError.response?.data || apiError.message);
+      
+      const responseTime = Date.now() - startTime;
+      const statusCode = apiError.response?.status || 500;
+      const errorData = apiError.response?.data || {};
+      
+      // Handle 409 conflict
+      if (statusCode === 409 || errorData.error?.includes('already has an appointment')) {
+        return res.status(409).json({
+          success: false,
+          conflict: true,
+          error: errorData.error || 'Time slot already booked',
+          message: 'This time slot is already booked. Please select a different time.',
+          statusCode: 409,
+          responseTime: `${responseTime}ms`,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      return res.status(statusCode).json({
+        success: false,
+        error: errorData.error || errorData.message || apiError.message || 'Failed to create appointment',
+        statusCode: statusCode,
+        responseTime: `${responseTime}ms`,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+  } catch (error) {
+    console.error('Flossly appointment endpoint error:', error);
+    const responseTime = Date.now() - startTime;
+    
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message,
+      responseTime: `${responseTime}ms`,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Store access token for botId (called from Bot Builder when saving bot config)
+app.post('/api/bot-token/:botId', (req, res) => {
+  const { botId } = req.params;
+  const { accessToken, dentistId } = req.body;
+  
+  if (!accessToken) {
+    return res.status(400).json({
+      success: false,
+      error: 'Access token is required'
+    });
+  }
+  
+  try {
+    const data = readData();
+    if (!data.bot_tokens) {
+      data.bot_tokens = {};
+    }
+    
+    data.bot_tokens[botId] = {
+      accessToken: accessToken,
+      dentistId: dentistId || null,
+      storedAt: new Date().toISOString()
+    };
+    
+    // Also store in bot_configs if it exists
+    if (data.bot_configs[botId]) {
+      data.bot_configs[botId].accessToken = accessToken;
+      if (dentistId) {
+        data.bot_configs[botId].dentistId = dentistId;
+      }
+    }
+    
+    writeData(data);
+    
+    console.log(`Access token stored for botId: ${botId}`);
+    
+    res.json({
+      success: true,
+      message: 'Access token stored successfully',
+      botId: botId
+    });
+  } catch (error) {
+    console.error('Error storing access token:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to store access token'
+    });
+  }
+});
 
 // Temporary endpoint for testing (remove in production)
 app.post('/api/bot-config/:botId', (req, res) => {
