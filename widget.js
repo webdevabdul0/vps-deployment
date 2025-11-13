@@ -1447,10 +1447,16 @@
             const result = await response.json();
             
             // Include HTTP status code in response for conflict detection
+            // Check if error is a string before calling includes
+            const errorMessage = typeof result.error === 'string' ? result.error : 
+                                (typeof result.message === 'string' ? result.message : '');
+            const isConflict = response.status === 409 || 
+                              (errorMessage && errorMessage.includes('already has an appointment'));
+            
             return {
                 ...result,
                 statusCode: response.status,
-                conflict: response.status === 409 || result.error?.includes('already has an appointment')
+                conflict: isConflict
             };
         })
         .then(result => {
@@ -1483,10 +1489,16 @@
             const result = await response.json();
             
             // Include HTTP status code in response for conflict detection
+            // Check if error is a string before calling includes
+            const errorMessage = typeof result.error === 'string' ? result.error : 
+                                (typeof result.message === 'string' ? result.message : '');
+            const isConflict = response.status === 409 || 
+                              (errorMessage && errorMessage.includes('already has an appointment'));
+            
             return {
                 ...result,
                 statusCode: response.status,
-                conflict: response.status === 409 || result.error?.includes('already has an appointment')
+                conflict: isConflict
             };
         })
         .then(result => {

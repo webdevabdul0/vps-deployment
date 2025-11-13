@@ -299,8 +299,8 @@ app.get('/api/bot-config/:botId', async (req, res) => {
       try {
         // Try public endpoint if it exists
         response = await axios.get(`${FLOSSLY_API_BASE}/chatbot/public/${botId}`, {
-          timeout: 10000
-        });
+        timeout: 10000
+      });
       } catch (publicError) {
         // If no public endpoint, config must be in VPS cache
         // This means Bot Builder should save to VPS when saving config
@@ -542,11 +542,17 @@ app.post('/api/flossly/appointment', async (req, res) => {
       const errorData = apiError.response?.data || {};
       
       // Handle 409 conflict
-      if (statusCode === 409 || errorData.error?.includes('already has an appointment')) {
+      // Check if error is a string and contains conflict message, or if status is 409
+      const errorMessage = typeof errorData.error === 'string' ? errorData.error : 
+                          (typeof errorData.message === 'string' ? errorData.message : '');
+      const isConflict = statusCode === 409 || 
+                        (errorMessage && errorMessage.includes('already has an appointment'));
+      
+      if (isConflict) {
         return res.status(409).json({
           success: false,
           conflict: true,
-          error: errorData.error || 'Time slot already booked',
+          error: errorMessage || 'Time slot already booked',
           message: 'This time slot is already booked. Please select a different time.',
           statusCode: 409,
           responseTime: `${responseTime}ms`,
@@ -554,9 +560,15 @@ app.post('/api/flossly/appointment', async (req, res) => {
         });
       }
       
+      // Format error message for response
+      const finalErrorMessage = typeof errorData.error === 'string' ? errorData.error :
+                               (typeof errorData.message === 'string' ? errorData.message :
+                               (typeof errorData.error === 'object' ? JSON.stringify(errorData.error) :
+                               apiError.message || 'Failed to create appointment'));
+      
       return res.status(statusCode).json({
         success: false,
-        error: errorData.error || errorData.message || apiError.message || 'Failed to create appointment',
+        error: finalErrorMessage,
         statusCode: statusCode,
         responseTime: `${responseTime}ms`,
         timestamp: new Date().toISOString()
