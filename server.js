@@ -401,118 +401,45 @@ app.post('/api/flossly/appointment', async (req, res) => {
       appointment: { date: appointment.date, time: appointment.time }
     });
     
-    // Get access token from bot config or stored tokens
-    // TODO: We need to store access token with botId when bot is configured
-    // For now, try to get from bot config or use a stored token mapping
+    // Get bot config to retrieve dentistId
     const data = readData();
+    const botConfig = data.bot_configs[botId];
     
-    // Check if we have stored access token for this botId
-    let accessToken = data.bot_tokens && data.bot_tokens[botId];
-    
-    if (!accessToken) {
-      // Try to get from bot config (if it was stored there)
-      const botConfig = data.bot_configs[botId];
-      if (botConfig && botConfig.accessToken) {
-        accessToken = botConfig.accessToken;
-      } else {
-        console.error(`No access token found for botId: ${botId}`);
-        return res.status(401).json({
-          success: false,
-          error: 'Access token not found for this bot. Please configure the bot with authentication.',
-          statusCode: 401
-        });
-      }
+    if (!botConfig || !botConfig.dentistId) {
+      console.error(`No dentistId found for botId: ${botId}`);
+      return res.status(400).json({
+        success: false,
+        error: 'Bot configuration incomplete. dentistId is required.',
+        statusCode: 400
+      });
     }
     
+    const dentistId = botConfig.dentistId;
+    const duration = appointment.duration || 30;
+    
     try {
-      // Step 1: Get treatment duration (optional)
-      let duration = appointment.duration || 30;
-      if (appointment.treatmentName) {
-        try {
-          const treatmentsResponse = await axios.get(`${FLOSSLY_API_BASE}/api/diary/treatments`, {
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json'
-            },
-            timeout: 10000
-          });
-          
-          if (treatmentsResponse.data.code === 0 && treatmentsResponse.data.data) {
-            const treatment = treatmentsResponse.data.data.find(
-              t => t.name === appointment.treatmentName
-            );
-            if (treatment && treatment.defaultDuration) {
-              duration = treatment.defaultDuration;
-            }
-          }
-        } catch (treatmentError) {
-          console.log('Could not fetch treatment duration, using default:', treatmentError.message);
-          // Continue with default duration
-        }
-      }
+      // Use the new public API endpoints that don't require authentication tokens
+      // The appointment endpoint can create patients automatically if patientName is provided
       
-      // Step 2: Create patient
-      const patientResponse = await axios.post(`${FLOSSLY_API_BASE}/api/diary/patientCreate`, {
-        firstName: patient.firstName,
-        lastName: patient.lastName,
-        email: patient.email,
-        mobile: patient.mobile
-      }, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
-      });
-      
-      if (patientResponse.data.code !== 0 || !patientResponse.data.data) {
-        throw new Error(patientResponse.data.message || 'Failed to create patient');
-      }
-      
-      const patientId = patientResponse.data.data.id;
-      console.log(`Patient created with ID: ${patientId}`);
-      
-      // Step 3: Get user profile to get dentistId (userId)
-      let dentistId;
-      try {
-        const profileResponse = await axios.get(`${FLOSSLY_API_BASE}/api/auth/profile`, {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 10000
-        });
-        
-        if (profileResponse.data.success && profileResponse.data.code === 0) {
-          dentistId = profileResponse.data.data.id; // userId is the dentistId
-        }
-      } catch (profileError) {
-        console.error('Could not fetch user profile:', profileError.message);
-        // We might need dentistId from bot config or another source
-      }
-      
-      if (!dentistId) {
-        // Try to get from bot config
-        const botConfig = data.bot_configs[botId];
-        if (botConfig && botConfig.dentistId) {
-          dentistId = botConfig.dentistId;
-        } else {
-          throw new Error('Could not determine dentistId. Please ensure bot is properly configured.');
-        }
-      }
-      
-      // Step 4: Create appointment
-      const appointmentResponse = await axios.post(`${FLOSSLY_API_BASE}/api/diary/appointmentCreate`, {
+      // Create appointment using public endpoint
+      // The endpoint will automatically create the patient if patientName is provided
+      const appointmentPayload = {
+        botId: botId,
         dentistId: dentistId,
-        patientId: patientId,
         date: appointment.date,
         time: appointment.time,
         duration: duration,
         treatmentName: appointment.treatmentName || null,
         notes: appointment.notes || 'Appointment booked via chatbot'
-      }, {
+      };
+      
+      // Use patientName for auto-creation (the API will create the patient automatically)
+      if (patient.firstName && patient.lastName) {
+        appointmentPayload.patientName = `${patient.firstName} ${patient.lastName}`;
+      }
+      
+      const appointmentResponse = await axios.post(`${FLOSSLY_API_BASE}/api/chatbot/createAppointment`, appointmentPayload, {
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json'
         },
         timeout: 10000
@@ -1468,18 +1395,20 @@ app.post('/webhook/appointment-booking', async (req, res) => {
         });
         
       } catch (calendarError) {
-        console.error('Calendar booking error:', calendarError.response?.data || calendarError.message);
-        
         const responseTime = Date.now() - startTime;
+        const calendarStatusCode = calendarError.response?.status;
+        const calendarErrorData = calendarError.response?.data || {};
         
-        res.json({
-          success: false,
-          message: 'Appointment request received but Google Calendar is not connected. Please contact us directly.',
-          botId: botId,
-          calendarError: calendarError.response?.data?.error || 'Calendar not connected',
-          responseTime: `${responseTime}ms`,
-          timestamp: new Date().toISOString()
-        });
+        // Only log as error if it's not a 404 (calendar not connected is expected)
+        if (calendarStatusCode === 404 || calendarErrorData.error === 'Google Calendar not connected') {
+          console.log('Google Calendar not connected for botId:', botId, '- This is expected if calendar is not set up');
+        } else {
+          console.error('Calendar booking error:', calendarErrorData || calendarError.message);
+        }
+        
+        // Calendar errors are non-blocking - appointment is still created in Flossly
+        // Don't return error response, just log it
+        // The appointment was already successfully created in Flossly API above
       }
     } else {
       // For non-appointment requests or incomplete data
