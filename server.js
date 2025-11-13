@@ -286,16 +286,30 @@ app.get('/api/bot-config/:botId', async (req, res) => {
       });
     }
     
-    // Fetch from main API
-    console.log(`Fetching fresh config for botId: ${botId} from ${FLOSSLY_API_BASE}`);
+    // If not in cache, we need to get it from somewhere
+    // Since widget needs config by botId, and main API only has by organizationId,
+    // we should save configs directly to VPS when Bot Builder saves them
+    // For now, if not in cache, return error - config should be saved to VPS when created
+    console.log(`Config not found in cache for botId: ${botId}`);
+    console.log(`Note: Bot configs should be saved to VPS when created in Bot Builder`);
+    
+    // Try to fetch from main API as fallback (if public endpoint exists)
     try {
-      const response = await axios.get(`${FLOSSLY_API_BASE}/api/crm/getBotConfig`, {
-        params: { botId },
-        timeout: 10000
-      });
+      let response;
+      try {
+        // Try public endpoint if it exists
+        response = await axios.get(`${FLOSSLY_API_BASE}/chatbot/public/${botId}`, {
+          timeout: 10000
+        });
+      } catch (publicError) {
+        // If no public endpoint, config must be in VPS cache
+        // This means Bot Builder should save to VPS when saving config
+        throw new Error(`Config not found in VPS cache. Bot configs should be saved to VPS when created.`);
+      }
       
-      if (response.data.Success && response.data.Code === 0) {
-        const botConfig = response.data.Data;
+      // Response format: { code: 1, data: {...} } where code: 1 means success
+      if (response.data.code === 1 && response.data.data) {
+        const botConfig = response.data.data;
         
         // Cache the config locally
         data.bot_configs[botId] = {
@@ -563,6 +577,48 @@ app.post('/api/flossly/appointment', async (req, res) => {
   }
 });
 
+// Save bot config to VPS cache (called from Bot Builder after saving to main API)
+app.post('/api/bot-config/:botId', (req, res) => {
+  const { botId } = req.params;
+  const config = req.body;
+  
+  if (!config) {
+    return res.status(400).json({
+      success: false,
+      error: 'Bot configuration is required'
+    });
+  }
+  
+  try {
+    const data = readData();
+    if (!data.bot_configs) {
+      data.bot_configs = {};
+    }
+    
+    // Save config to VPS cache
+    data.bot_configs[botId] = {
+      ...config,
+      cachedAt: new Date().toISOString()
+    };
+    
+    writeData(data);
+    
+    console.log(`Bot config saved to VPS cache for botId: ${botId}`);
+    
+    res.json({
+      success: true,
+      message: 'Bot configuration saved to VPS cache successfully',
+      botId: botId
+    });
+  } catch (error) {
+    console.error('Error saving bot config to VPS:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to save bot configuration to VPS cache'
+    });
+  }
+});
+
 // Store access token for botId (called from Bot Builder when saving bot config)
 app.post('/api/bot-token/:botId', (req, res) => {
   const { botId } = req.params;
@@ -613,28 +669,6 @@ app.post('/api/bot-token/:botId', (req, res) => {
   }
 });
 
-// Temporary endpoint for testing (remove in production)
-app.post('/api/bot-config/:botId', (req, res) => {
-  const { botId } = req.params;
-  const config = req.body;
-  
-  try {
-    const data = readData();
-    data.bot_configs[botId] = {
-      ...config,
-      cachedAt: new Date().toISOString()
-    };
-    writeData(data);
-    
-    res.json({
-      success: true,
-      message: 'Test bot configuration saved',
-      botId: botId
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to save test config' });
-  }
-});
 
 // No encryption for now - store tokens as plain text
 
