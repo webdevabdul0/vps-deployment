@@ -531,6 +531,129 @@ app.post('/api/flossly/appointment', async (req, res) => {
   }
 });
 
+// Flossly API Lead Endpoint
+// This endpoint handles lead creation in Flossly API (for treatment enquiries/brochure requests)
+app.post('/api/flossly/lead', async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    const { botId, customer, treatment, company } = req.body;
+    
+    if (!botId || !customer) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: botId or customer'
+      });
+    }
+    
+    console.log(`[${new Date().toISOString()}] Flossly API lead request:`, {
+      botId,
+      customer: { name: customer.name, email: customer.email },
+      treatment: treatment?.name || 'N/A'
+    });
+    
+    // Validate required fields for lead creation
+    if (!customer.email || !customer.name) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required customer fields: email and name are required',
+        statusCode: 400
+      });
+    }
+    
+    try {
+      // Prepare lead payload for public API endpoint
+      const leadPayload = {
+        botId: botId,
+        name: customer.name,
+        email: customer.email,
+        telephone: customer.phone || '',
+        leadSource: 'Chatbot',
+        leadStatus: 'New'
+      };
+      
+      // Add optional fields if available
+      if (treatment && treatment.name) {
+        leadPayload.treatment = treatment.name;
+        if (treatment.description) {
+          leadPayload.comments = `Treatment enquiry: ${treatment.name}. ${treatment.description}`;
+        } else {
+          leadPayload.comments = `Treatment enquiry: ${treatment.name}`;
+        }
+      }
+      
+      if (company && company.name) {
+        leadPayload.comments = (leadPayload.comments || '') + ` | Company: ${company.name}`;
+      }
+      
+      const leadResponse = await axios.post(`${FLOSSLY_API_BASE}/api/chatbot/createLead`, leadPayload, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+      
+      const responseTime = Date.now() - startTime;
+      
+      if (leadResponse.data.code === 0 || leadResponse.data.success) {
+        console.log(`Lead created successfully:`, leadResponse.data.data);
+        
+        return res.json({
+          success: true,
+          message: 'Lead created successfully',
+          data: leadResponse.data.data,
+          responseTime: `${responseTime}ms`,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        throw new Error(leadResponse.data.message || 'Failed to create lead');
+      }
+      
+    } catch (apiError) {
+      console.error('Flossly API error:', apiError.response?.data || apiError.message);
+      
+      const responseTime = Date.now() - startTime;
+      const statusCode = apiError.response?.status || 500;
+      const errorData = apiError.response?.data || {};
+      
+      // Extract error message from various possible locations in the response
+      let errorMessage = '';
+      if (typeof errorData.error === 'string') {
+        errorMessage = errorData.error;
+      } else if (typeof errorData.message === 'string' && errorData.message) {
+        errorMessage = errorData.message;
+      } else if (errorData.data && typeof errorData.data.message === 'string') {
+        errorMessage = errorData.data.message;
+      } else if (typeof errorData.error === 'object' && errorData.error !== null) {
+        errorMessage = JSON.stringify(errorData.error);
+      }
+      
+      // Format error message for response
+      const finalErrorMessage = errorMessage || apiError.message || 'Failed to create lead';
+      
+      return res.status(statusCode).json({
+        success: false,
+        error: finalErrorMessage,
+        statusCode: statusCode,
+        responseTime: `${responseTime}ms`,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+  } catch (error) {
+    console.error('Flossly lead endpoint error:', error);
+    const responseTime = Date.now() - startTime;
+    
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message,
+      responseTime: `${responseTime}ms`,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Save bot config to VPS cache (called from Bot Builder after saving to main API)
 app.post('/api/bot-config/:botId', (req, res) => {
   const { botId } = req.params;

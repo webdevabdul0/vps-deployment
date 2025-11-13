@@ -745,8 +745,8 @@
     function completeTreatment() {
         const typingDiv = showTypingIndicator();
         
-        // Send to treatment webhook
-        sendToTreatmentWebhook({
+        // Prepare treatment enquiry data
+        const treatmentData = {
             botId: botConfig.botId,
             botName: botConfig.name,
             type: 'brochure_request',
@@ -770,7 +770,19 @@
                 tagline: '',
                 logo: ''
             }
-        }, (response) => {
+        };
+        
+        // Send to both n8n webhook (for Gmail brochure) AND Flossly Lead API
+        // First, send to n8n webhook (non-blocking)
+        if (botConfig.gmailBrochureUrl) {
+            sendToTreatmentWebhook(treatmentData, (n8nResponse) => {
+                // Log n8n response but don't block on it
+                console.log('n8n treatment webhook response:', n8nResponse);
+            });
+        }
+        
+        // Then, send to Flossly Lead API endpoint (blocking for user feedback)
+        sendToFlosslyLeadAPI(treatmentData, (response) => {
             hideTypingIndicator();
             
             if (response.success) {
@@ -783,7 +795,7 @@
                     }, 1000);
                 }, 2000);
             } else {
-                addBotMessage("❌ " + (response.message || "Sorry, there was an error sending the brochure. Please try again."));
+                addBotMessage("❌ " + (response.message || response.error || "Sorry, there was an error sending the brochure. Please try again."));
                 
                 setTimeout(() => {
                     addBotMessage("Would you like to try again?");
@@ -1511,6 +1523,39 @@
                     success: false,
                     message: 'Network error. Please try again.',
                     statusCode: 0
+                });
+            }
+        });
+    }
+    
+    function sendToFlosslyLeadAPI(data, callback) {
+        // Send to server endpoint that will handle Flossly Lead API calls
+        const flosslyLeadApiUrl = `https://widget.flossly.ai/api/flossly/lead`;
+        
+        fetch(flosslyLeadApiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        })
+        .then(async response => {
+            const result = await response.json();
+            
+            return {
+                ...result,
+                statusCode: response.status
+            };
+        })
+        .then(result => {
+            if (callback) callback(result);
+        })
+        .catch(err => {
+            console.log('Flossly Lead API error:', err);
+            if (callback) {
+                callback({
+                    success: false,
+                    error: 'Network error: ' + err.message
                 });
             }
         });
