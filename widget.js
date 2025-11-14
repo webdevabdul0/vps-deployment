@@ -421,7 +421,7 @@
             const typingDiv = showTypingIndicator();
             setTimeout(() => {
                 hideTypingIndicator();
-                addBotMessage('You\'d like a callback from our team—happy to arrange that! Could you please provide your name and the best phone number to reach you?');
+                addBotMessage('You\'d like a callback from our team—happy to arrange that! Let me collect a few details from you.');
                 setTimeout(() => {
                     startCallbackFlow();
                 }, 1000);
@@ -998,12 +998,11 @@
         // Add friendly question before showing the field
         let question = '';
         if (field.name === 'name') {
-            // Skip question for first field since it's already asked in callback greeting
-            question = '';
+            question = 'What\'s your full name?';
         } else if (field.name === 'email') {
-            question = 'Perfect! What\'s your email address?';
+            question = 'What\'s your email address?';
         } else if (field.name === 'phone') {
-            question = 'Excellent! What\'s the best phone number to reach you?';
+            question = 'What\'s the best phone number to reach you?';
         } else if (field.name === 'reason') {
             question = 'What\'s the reason for your callback request?';
         } else if (field.name === 'timing') {
@@ -1161,7 +1160,7 @@
                 const typingDiv = showTypingIndicator();
                 setTimeout(() => {
                     hideTypingIndicator();
-                    addBotMessage('You\'d like a callback from our team—happy to arrange that! Could you please provide your name and the best phone number to reach you?');
+                    addBotMessage('You\'d like a callback from our team—happy to arrange that! Let me collect a few details from you.');
                     setTimeout(() => {
                         currentWorkflow = 'callback';
                         startCallbackFlow();
@@ -1694,7 +1693,7 @@
                 const typingDiv = showTypingIndicator();
                 setTimeout(() => {
                     hideTypingIndicator();
-                    addBotMessage('You\'d like a callback from our team—happy to arrange that! Could you please provide your name and the best phone number to reach you?');
+                    addBotMessage('You\'d like a callback from our team—happy to arrange that! Let me collect a few details from you.');
                     setTimeout(() => {
                         currentWorkflow = 'callback';
                         startCallbackFlow();
