@@ -643,7 +643,8 @@
         const lastName = nameParts.slice(1).join(' ') || '-';
         
         // Get treatment information if available
-        const treatmentName = selectedTreatment ? selectedTreatment.name : null;
+        // Default to "Checkup" if no treatment was selected
+        const treatmentName = selectedTreatment ? selectedTreatment.name : 'Checkup';
         const treatmentDuration = selectedTreatment ? (selectedTreatment.defaultDuration || 30) : 30;
         
         // Prepare appointment data in Flossly API format
@@ -1344,7 +1345,8 @@
                 const lastName = nameParts.slice(1).join(' ') || '-';
                 
                 // Get treatment information if available
-                const treatmentName = selectedTreatment ? selectedTreatment.name : null;
+                // Default to "Checkup" if no treatment was selected
+                const treatmentName = selectedTreatment ? selectedTreatment.name : 'Checkup';
                 const treatmentDuration = selectedTreatment ? (selectedTreatment.defaultDuration || 30) : 30;
                 
                 // Prepare appointment data

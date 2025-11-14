@@ -438,7 +438,7 @@ app.post('/api/flossly/appointment', async (req, res) => {
         date: appointment.date,
         time: appointment.time,
         duration: duration,
-        treatmentName: appointment.treatmentName || null,
+        treatmentName: appointment.treatmentName || 'Checkup',
         notes: appointment.notes || 'Appointment booked via chatbot'
       };
       
