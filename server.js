@@ -262,18 +262,12 @@ app.get('/api/bot-config/:botId', async (req, res) => {
   const { botId } = req.params;
   
   try {
-    // First check local cache
+    // First check local cache - serve if exists (regardless of age)
     const data = readData();
     const cachedConfig = data.bot_configs[botId];
     
-    // Check if cache is still valid (5 minutes)
-    const now = Date.now();
-    const cacheValid = cachedConfig && 
-      cachedConfig.cachedAt && 
-      (now - new Date(cachedConfig.cachedAt).getTime()) < 5 * 60 * 1000;
-    
-    if (cacheValid) {
-      console.log(`Using cached config for botId: ${botId}`);
+    if (cachedConfig) {
+      console.log(`Using cached config for botId: ${botId} (cached at: ${cachedConfig.cachedAt || 'unknown'})`);
       res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=600');
       res.setHeader('Access-Control-Allow-Origin', '*');
       
@@ -286,14 +280,9 @@ app.get('/api/bot-config/:botId', async (req, res) => {
       });
     }
     
-    // If not in cache, we need to get it from somewhere
-    // Since widget needs config by botId, and main API only has by organizationId,
-    // we should save configs directly to VPS when Bot Builder saves them
-    // For now, if not in cache, return error - config should be saved to VPS when created
-    console.log(`Config not found in cache for botId: ${botId}`);
-    console.log(`Note: Bot configs should be saved to VPS when created in Bot Builder`);
+    // If not in cache, try to fetch from main API as fallback (if public endpoint exists)
+    console.log(`Config not found in VPS cache for botId: ${botId}, trying main API...`);
     
-    // Try to fetch from main API as fallback (if public endpoint exists)
     try {
       let response;
       try {
@@ -302,21 +291,22 @@ app.get('/api/bot-config/:botId', async (req, res) => {
         timeout: 10000
       });
       } catch (publicError) {
-        // If no public endpoint, config must be in VPS cache
-        // This means Bot Builder should save to VPS when saving config
-        throw new Error(`Config not found in VPS cache. Bot configs should be saved to VPS when created.`);
+        // If no public endpoint, config must be saved to VPS first
+        throw new Error(`Config not found in VPS cache. Please save the bot configuration in Bot Builder first.`);
       }
       
       // Response format: { code: 1, data: {...} } where code: 1 means success
       if (response.data.code === 1 && response.data.data) {
         const botConfig = response.data.data;
         
-        // Cache the config locally
+        // Cache the config locally for future requests
         data.bot_configs[botId] = {
           ...botConfig,
           cachedAt: new Date().toISOString()
         };
         writeData(data);
+        
+        console.log(`Config fetched from main API and cached for botId: ${botId}`);
         
         // Add cache headers for better performance
         res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=600');
@@ -334,7 +324,7 @@ app.get('/api/bot-config/:botId', async (req, res) => {
         console.log(`Main API returned error for botId: ${botId}`, response.data);
         res.status(404).json({ 
           success: false, 
-          error: 'Bot configuration not found in main API',
+          error: 'Bot configuration not found. Please save the bot configuration in Bot Builder first.',
           botId: botId
         });
       }
@@ -342,9 +332,9 @@ app.get('/api/bot-config/:botId', async (req, res) => {
       console.log(`Main API error for botId: ${botId}`, apiError.response?.data || apiError.message);
       res.status(404).json({ 
         success: false, 
-        error: 'Bot configuration not found in main API',
+        error: 'Bot configuration not found. Please save the bot configuration in Bot Builder first.',
         botId: botId,
-        details: apiError.response?.data?.message || 'API authentication required'
+        details: apiError.response?.data?.message || apiError.message
       });
     }
     
