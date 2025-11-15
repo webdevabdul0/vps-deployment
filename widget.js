@@ -430,8 +430,29 @@
     }
     
     function startAppointmentFlow() {
-        currentFormStep = 0;
-        formData = {};
+        // Don't reset formData if it already has data from previous flows
+        // Only reset if starting fresh
+        if (Object.keys(formData).length === 0) {
+            formData = {};
+        }
+        
+        // Find the first field that doesn't have data
+        let startFieldIndex = 0;
+        for (let i = 0; i < botConfig.appointmentFlow.fields.length; i++) {
+            const field = botConfig.appointmentFlow.fields[i];
+            if (!formData[field.name]) {
+                startFieldIndex = i;
+                break;
+            }
+        }
+        
+        currentFormStep = startFieldIndex;
+        
+        // If we have some data, show a message
+        if (formData.fullName || formData.contact || formData.phone) {
+            addBotMessage('Great! I have some of your details already. Let me collect the remaining information.');
+        }
+        
         showNextFormField();
     }
     
@@ -446,6 +467,14 @@
         }
         
         const field = botConfig.appointmentFlow.fields[currentFormStep];
+        
+        // Check if we already have this field's data
+        if (formData[field.name]) {
+            // Skip this field and move to next
+            currentFormStep++;
+            showNextFormField();
+            return;
+        }
         
         // Add friendly question before showing the field
         let question = '';
@@ -724,9 +753,15 @@
                     } else if (response.availableSlots && response.availableSlots.length > 0) {
                         showAppointmentSuggestions([], response.availableSlots);
                     } else {
+                        // Ask for time again instead of going back to options
                         addBotMessage("Please select a different date and time for your appointment.");
                         setTimeout(() => {
-                            showAppointmentOptions();
+                            // Go back to asking for preferred time
+                            currentFormStep = botConfig.appointmentFlow.fields.findIndex(f => f.name === 'preferredTime');
+                            if (currentFormStep === -1) {
+                                currentFormStep = botConfig.appointmentFlow.fields.findIndex(f => f.name === 'preferredDate');
+                            }
+                            showNextFormField();
                         }, 1000);
                     }
                 }, 1500);
@@ -975,15 +1010,68 @@
     }
     
     function startTreatmentFormFlow() {
-        currentFormStep = 0;
-        formData = {};
+        // Don't reset formData if it already has data from previous flows
+        // Only reset if starting fresh
+        if (Object.keys(formData).length === 0) {
+            formData = {};
+        }
+        
+        // Find the first field that doesn't have data
+        let startFieldIndex = 0;
+        for (let i = 0; i < botConfig.appointmentFlow.fields.length; i++) {
+            const field = botConfig.appointmentFlow.fields[i];
+            // For treatment flow, we only need name, email, phone
+            if (field.name === 'fullName' || field.name === 'contact' || field.name === 'phone') {
+                if (!formData[field.name]) {
+                    startFieldIndex = i;
+                    break;
+                }
+            }
+        }
+        
+        currentFormStep = startFieldIndex;
+        
+        // If we have some data, show a message
+        if (formData.fullName || formData.contact || formData.phone) {
+            addBotMessage('Great! I have some of your details already. Let me collect the remaining information.');
+        }
+        
         showNextFormField();
     }
     
     // Callback workflow functions
     function startCallbackFlow() {
-        currentCallbackField = 0;
+        // Check if we have data from previous flows (appointment or treatment)
         callbackData = {};
+        
+        // Map from appointment/treatment formData to callbackData
+        if (formData.fullName) {
+            callbackData.name = formData.fullName;
+        }
+        if (formData.contact) {
+            callbackData.email = formData.contact;
+        }
+        if (formData.phone) {
+            callbackData.phone = formData.phone;
+        }
+        
+        // Find the first field that doesn't have data
+        let startFieldIndex = 0;
+        for (let i = 0; i < botConfig.callbackFlow.fields.length; i++) {
+            const field = botConfig.callbackFlow.fields[i];
+            if (!callbackData[field.name]) {
+                startFieldIndex = i;
+                break;
+            }
+        }
+        
+        currentCallbackField = startFieldIndex;
+        
+        // If we have some data, show a message
+        if (callbackData.name || callbackData.email || callbackData.phone) {
+            addBotMessage('Perfect! I have some of your details already. Let me collect the remaining information.');
+        }
+        
         showNextCallbackField();
     }
     
@@ -994,6 +1082,14 @@
         }
         
         const field = botConfig.callbackFlow.fields[currentCallbackField];
+        
+        // Check if we already have this field's data
+        if (callbackData[field.name]) {
+            // Skip this field and move to next
+            currentCallbackField++;
+            showNextCallbackField();
+            return;
+        }
         
         // Add friendly question before showing the field
         let question = '';
@@ -1407,7 +1503,16 @@
                             } else if (response.availableSlots && response.availableSlots.length > 0) {
                                 showAppointmentSuggestions([], response.availableSlots);
                             } else {
+                                // Ask for time again
                                 addBotMessage("Please select a different date and time.");
+                                setTimeout(() => {
+                                    // Go back to asking for preferred time
+                                    currentFormStep = botConfig.appointmentFlow.fields.findIndex(f => f.name === 'preferredTime');
+                                    if (currentFormStep === -1) {
+                                        currentFormStep = botConfig.appointmentFlow.fields.findIndex(f => f.name === 'preferredDate');
+                                    }
+                                    showNextFormField();
+                                }, 1000);
                             }
                         }, 1000);
                     } else {
