@@ -237,9 +237,9 @@
     messagesContainer.className = 'flossy-messages';
     messagesContainer.style.cssText = `flex:1;padding:24px;overflow-y:auto;background:rgba(249,250,251,0.3);`;
     
-    // Create input area
+    // Create input area (visible by default for AI mode)
     const inputArea = document.createElement('div');
-    inputArea.style.cssText = `padding:16px;border-top:1px solid #f3f4f6;background:white;display:none;`;
+    inputArea.style.cssText = `padding:16px;border-top:1px solid #f3f4f6;background:white;display:flex;`;
     inputArea.innerHTML = `
         <div style="display:flex;gap:8px;align-items:center;">
             <input class="flossy-input" type="text" placeholder="Type your message here..." 
