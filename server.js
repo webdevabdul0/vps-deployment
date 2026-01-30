@@ -618,7 +618,7 @@ app.post('/api/flossly/lead', async (req, res) => {
       
       const responseTime = Date.now() - startTime;
       
-      if (leadResponse.data.code === 0 || leadResponse.data.success) {
+      if (leadResponse.data.code === 1 || leadResponse.data.success) {
         console.log(`Lead created successfully:`, leadResponse.data.data);
         
         return res.json({

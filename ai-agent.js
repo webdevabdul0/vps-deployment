@@ -356,7 +356,8 @@ async function executeBookAppointment(botConfig, appointmentData) {
     const isConflict = response.status === 409 || 
                       (errorMessage && errorMessage.includes('already has an appointment'));
     
-    if (result.success || response.status === 200) {
+    // Flossly API returns code: 1 for success, code: 0 for error
+    if (result.code === 1 || result.success === true || response.status === 200) {
       return {
         success: true,
         message: `Perfect! I've booked your appointment for ${appointmentData.date} at ${appointmentData.time}. You'll receive a confirmation email shortly.`,
@@ -432,7 +433,8 @@ async function executeCreateLead(botConfig, leadData) {
     
     const result = response.data;
     
-    if (result.success || response.status === 200) {
+    // Flossly API returns code: 1 for success, code: 0 for error
+    if (result.code === 1 || result.success === true || response.status === 200) {
       return {
         success: true,
         message: `Great! I've recorded your interest in ${leadData.treatment}. Our team will reach out to you soon with more information.`,
@@ -499,7 +501,8 @@ async function executeScheduleCallback(botConfig, callbackData) {
     
     const result = response.data;
     
-    if (result.success || response.status === 200) {
+    // Check for success response (n8n webhook may return different structure)
+    if (result.success === true || response.status === 200) {
       return {
         success: true,
         message: `Perfect! I've scheduled a callback for you. Our team will reach out ${callbackData.preferredTime || 'soon'}.`,
