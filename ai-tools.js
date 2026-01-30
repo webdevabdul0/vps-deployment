@@ -166,8 +166,6 @@ const tools = [
  */
 async function browseWebsite(url, focus = null) {
   try {
-    console.log(`[AI Agent] Browsing website: ${url}`);
-    
     const result = await firecrawl.scrape(url, {
       formats: ['markdown', 'html'],
       onlyMainContent: true,
@@ -175,8 +173,29 @@ async function browseWebsite(url, focus = null) {
       waitFor: 2000 // Wait 2s for dynamic content
     });
     
+    // Check if we got a 404 page
+    const statusCode = result.metadata?.statusCode;
+    if (statusCode === 404) {
+      return {
+        success: false,
+        url,
+        error: '404 Not Found',
+        message: `The page ${url} was not found (404 error). Please try browsing the homepage instead of subpages.`
+      };
+    }
+    
     // Limit content to prevent token overflow (max ~2000 tokens)
     const content = result.markdown ? result.markdown.substring(0, 8000) : '';
+    
+    // Check if content indicates a 404 page
+    if (content.toLowerCase().includes('404') && content.toLowerCase().includes('not found')) {
+      return {
+        success: false,
+        url,
+        error: '404 Not Found',
+        message: `The page ${url} returned a 404 error. Please try browsing the homepage instead of subpages.`
+      };
+    }
     
     return {
       success: true,
@@ -189,7 +208,6 @@ async function browseWebsite(url, focus = null) {
     };
     
   } catch (error) {
-    console.error(`[AI Agent] Error browsing ${url}:`, error.message);
     return {
       success: false,
       url,
@@ -204,48 +222,13 @@ async function browseWebsite(url, focus = null) {
  */
 async function searchPracticeWebsite(practiceUrl, query) {
   try {
-    console.log(`[AI Agent] Searching website ${practiceUrl} for: ${query}`);
+    // ONLY browse homepage - no subpages to avoid 404 errors
+    const pagesToSearch = [practiceUrl];
     
-    // Common pages to check for dental practices
-    const commonPages = [
-      practiceUrl,
-      `${practiceUrl}/services`,
-      `${practiceUrl}/treatments`,
-      `${practiceUrl}/pricing`,
-      `${practiceUrl}/prices`,
-      `${practiceUrl}/about`,
-      `${practiceUrl}/contact`,
-      `${practiceUrl}/book`,
-      `${practiceUrl}/faq`
-    ];
-    
-    // Use Firecrawl's map feature to quickly get site structure
-    let pagesToSearch = commonPages;
-    
-    try {
-      const mapResult = await firecrawl.map(practiceUrl, {
-        limit: 20
-      });
-      
-      if (mapResult.links && mapResult.links.length > 0) {
-        // Filter relevant links based on query
-        const relevantLinks = mapResult.links.filter(link => {
-          const linkLower = link.toLowerCase();
-          const queryWords = query.toLowerCase().split(' ');
-          return queryWords.some(word => linkLower.includes(word));
-        });
-        
-        // Combine with common pages, remove duplicates
-        pagesToSearch = [...new Set([...commonPages, ...relevantLinks.slice(0, 5)])];
-      }
-    } catch (mapError) {
-      console.log('[AI Agent] Map failed, using common pages only');
-    }
-    
-    // Search through pages
+    // Search through pages (just homepage)
     const results = [];
     
-    for (const pageUrl of pagesToSearch.slice(0, 5)) { // Limit to 5 pages
+    for (const pageUrl of pagesToSearch) {
       try {
         const pageContent = await browseWebsite(pageUrl);
         
@@ -262,7 +245,7 @@ async function searchPracticeWebsite(practiceUrl, query) {
           }
         }
       } catch (error) {
-        console.log(`[AI Agent] Skipping ${pageUrl}: ${error.message}`);
+        // Skip pages with errors
       }
     }
     
@@ -287,7 +270,6 @@ async function searchPracticeWebsite(practiceUrl, query) {
     };
     
   } catch (error) {
-    console.error(`[AI Agent] Search error:`, error.message);
     return {
       success: false,
       query,

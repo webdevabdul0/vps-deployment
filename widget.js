@@ -239,13 +239,13 @@
     
     // Create input area (visible by default for AI mode)
     const inputArea = document.createElement('div');
-    inputArea.style.cssText = `padding:16px;border-top:1px solid #f3f4f6;background:white;display:flex;`;
+    inputArea.style.cssText = `padding:16px;border-top:1px solid #f3f4f6;background:white;display:flex;width:100%;box-sizing:border-box;`;
     inputArea.innerHTML = `
-        <div style="display:flex;gap:8px;align-items:center;">
+        <div style="display:flex;gap:12px;align-items:center;width:100%;">
             <input class="flossy-input" type="text" placeholder="Type your message here..." 
-                   style="flex:1;padding:8px 12px;border:2px solid #e5e7eb;border-radius:12px;font-size:12px;color:#374151;background:white;outline:none;transition:all 0.2s ease;transform:scale(1);" />
-            <button class="flossy-send-btn" style="width:40px;height:40px;border-radius:12px;background:${botConfig.themeColor};color:white;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s ease;transform:scale(1);box-shadow:0 1px 3px rgba(0,0,0,0.1);">
-                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width:2">
+                   style="flex:1;padding:12px 16px;border:2px solid #e5e7eb;border-radius:12px;font-size:14px;color:#374151;background:white;outline:none;transition:all 0.2s ease;min-height:42px;width:100%;" />
+            <button class="flossy-send-btn" style="width:42px;height:42px;border-radius:12px;background:${botConfig.themeColor};color:white;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s ease;transform:scale(1);box-shadow:0 2px 4px rgba(0,0,0,0.1);flex-shrink:0;">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width:2.5">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" transform="rotate(90 12 12)"/>
                 </svg>
             </button>
@@ -298,14 +298,48 @@
         });
     }
     
+    // Simple markdown parser for bot messages
+    function parseMarkdown(text) {
+        if (!text) return '';
+        
+        // Convert markdown to HTML
+        let html = text;
+        
+        // Bold: **text** or __text__
+        html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+        
+        // Italic: *text* or _text_
+        html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        html = html.replace(/_(.+?)_/g, '<em>$1</em>');
+        
+        // Line breaks
+        html = html.replace(/\n/g, '<br>');
+        
+        // Numbered lists: 1. item
+        html = html.replace(/^(\d+\.\s+)(.+)$/gm, '<div style="margin-left:16px;margin-bottom:4px;">$1$2</div>');
+        
+        // Bullet lists: - item or * item
+        html = html.replace(/^[-*]\s+(.+)$/gm, '<div style="margin-left:16px;margin-bottom:4px;">• $1</div>');
+        
+        // Links: [text](url)
+        html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:' + botConfig.themeColor + ';text-decoration:underline;">$1</a>');
+        
+        return html;
+    }
+    
     function addBotMessage(text, showAvatar = true) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'flossy-slide-in';
         messageDiv.style.cssText = 'display:flex;gap:12px;margin-bottom:16px;align-items:flex-start;';
+        
+        // Parse markdown
+        const formattedText = parseMarkdown(text);
+        
         messageDiv.innerHTML = `
             ${showAvatar ? `<img src="${botConfig.avatar}" alt="Bot" style="width:32px;height:32px;border-radius:50%;flex-shrink:0;">` : '<div style="width:32px;"></div>'}
             <div style="flex:1;">
-                <div style="background:white;color:#374151;padding:12px 16px;border-radius:20px;border-radius-top-left:6px;box-shadow:0 1px 2px rgba(0,0,0,0.05);border:1px solid #f3f4f6;margin-bottom:4px;max-width:280px;font-size:14px;">${text}</div>
+                <div style="background:white;color:#374151;padding:12px 16px;border-radius:20px;border-radius-top-left:6px;box-shadow:0 1px 2px rgba(0,0,0,0.05);border:1px solid #f3f4f6;margin-bottom:4px;max-width:280px;font-size:14px;line-height:1.5;">${formattedText}</div>
                 <div style="font-size:11px;color:#9ca3af;margin-left:4px;">Just now</div>
             </div>
         `;
@@ -472,6 +506,9 @@
         }
         
         currentFormStep = startFieldIndex;
+        
+        // Hide input field during appointment flow
+        inputArea.style.display = 'none';
         
         // If we have some data, show a message
         if (formData.fullName || formData.contact || formData.phone) {
@@ -1159,6 +1196,9 @@
         
         currentFormStep = startFieldIndex;
         
+        // Hide input field during form flow
+        inputArea.style.display = 'none';
+        
         // If we have some data, show a message
         if (formData.fullName || formData.contact || formData.phone) {
             addBotMessage('Great! I have some of your details already. Let me collect the remaining information.');
@@ -1194,6 +1234,9 @@
         }
         
         currentCallbackField = startFieldIndex;
+        
+        // Hide input field during callback flow
+        inputArea.style.display = 'none';
         
         // If we have some data, show a message
         if (callbackData.name || callbackData.email || callbackData.phone) {
@@ -1980,7 +2023,7 @@
         showTypingIndicator();
         
         try {
-            const response = await fetch('https://widget.flossly.ai/api/ai/chat', {
+            const response = await fetch('http://localhost:3003/api/ai/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -1992,24 +2035,22 @@
                 })
             });
             
-            const data = await response.json();
-            
             hideTypingIndicator();
             
+            const data = await response.json();
+            
             if (data.success && data.content) {
-                // Update conversation history
-                aiConversationHistory = data.conversationHistory || [];
-                
-                // Display AI response
+                // Add bot message
                 addBotMessage(data.content);
                 
-                // Log tools used (for debugging)
-                if (data.toolsUsed > 0) {
-                    console.log(`AI used ${data.toolsUsed} tool(s) to respond`);
-                }
+                // Update conversation history
+                aiConversationHistory.push(
+                    { role: 'user', content: userMessage },
+                    { role: 'assistant', content: data.content }
+                );
+                aiConversationHistory = aiConversationHistory.slice(-10);
             } else {
                 addBotMessage("I apologize, but I'm having trouble right now. Please try again or contact us directly.");
-                console.error('AI Chat error:', data.error);
             }
         } catch (error) {
             hideTypingIndicator();

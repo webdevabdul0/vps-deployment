@@ -15,7 +15,7 @@ const fs = require('fs');
 const axios = require('axios');
 
 // Import AI Agent
-const { chatWithAgent } = require('./ai-agent');
+const { chatWithAgent, chatWithAgentStream } = require('./ai-agent');
 
 const app = express();
 const PORT = process.env.PORT || 3001; // Different port from n8n (usually 5678)
@@ -1616,19 +1616,27 @@ app.post('/api/ai/chat/stream', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     
-    // For now, just return the regular response
-    // TODO: Implement streaming with OpenAI streaming API
-    const response = await chatWithAgent(botId, message, conversationHistory);
+    console.log(`[AI Chat Stream] Bot ${botId}: "${message.substring(0, 50)}..."`);
     
-    res.write(`data: ${JSON.stringify(response)}\n\n`);
+    // Add X-Accel-Buffering header to disable nginx buffering
+    res.setHeader('X-Accel-Buffering', 'no');
+    
+    // Stream the response using async generator
+    const stream = chatWithAgentStream(botId, message, conversationHistory);
+    
+    for await (const chunk of stream) {
+      // Send each chunk as it arrives from OpenAI
+      res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunk })}\n\n`);
+    }
+    
+    // Send completion signal
+    res.write(`data: ${JSON.stringify({ type: 'complete' })}\n\n`);
     res.end();
     
   } catch (error) {
     console.error('[AI Chat Stream] Error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+    res.end();
   }
 });
 
