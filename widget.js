@@ -73,7 +73,7 @@
     // Load configuration from API
     let botConfig = { ...defaultConfig };
     
-    // AI Mode state
+    // AI Mode state (auto-enabled if website is present)
     let aiMode = false;
     let aiConversationHistory = [];
     
@@ -97,10 +97,13 @@
                 console.log('Flossy Widget: Config loaded successfully');
                 botConfig = { ...defaultConfig, ...data.data };
                 
-                // Check if AI mode is enabled
-                if (botConfig.aiMode) {
-                    console.log('Flossy Widget: AI Mode enabled');
+                // Automatically enable AI mode if website URL is present (compulsory)
+                if (botConfig.companyWebsite && botConfig.companyWebsite.trim() !== '') {
+                    console.log('Flossy Widget: AI Mode enabled (website present)');
                     aiMode = true;
+                } else {
+                    console.log('Flossy Widget: Traditional mode (no website configured)');
+                    aiMode = false;
                 }
                 
                 initializeWidget();
