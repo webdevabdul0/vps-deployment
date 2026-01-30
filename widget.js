@@ -1938,11 +1938,19 @@
             addUserMessage(message);
             input.value = '';
             
-            // If AI mode is enabled, use AI chat
-            if (aiMode) {
+            // If AI mode is enabled and NOT in a form flow, use AI chat
+            if (aiMode && currentFormStep === -1 && currentCallbackField === -1 && !showTreatmentChat) {
                 handleAIChat(message);
+            } else if (aiMode && (currentFormStep >= 0 || currentCallbackField >= 0 || showTreatmentChat)) {
+                // In form flow - let the form handle it (don't use AI)
+                // This is handled by existing form logic
+                const typingDiv = showTypingIndicator();
+                setTimeout(() => {
+                    hideTypingIndicator();
+                    addBotMessage(`Thanks for your message: "${message}". How else can I help?`);
+                }, 1000);
             } else {
-                // Legacy flow handling
+                // Legacy flow handling (non-AI mode)
                 // Check if user typed "callback" during treatment flow
                 if (currentWorkflow === 'treatment' && message.toLowerCase().includes('callback')) {
                     const typingDiv = showTypingIndicator();
