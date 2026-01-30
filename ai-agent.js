@@ -154,7 +154,7 @@ Remember: You represent ${practiceName}. Be helpful, accurate, and professional 
 /**
  * Main chat function - handles conversation with AI agent
  */
-async function chatWithAgent(botId, userMessage, conversationHistory = []) {
+async function chatWithAgent(botId, userMessage, conversationHistory = [], userTimezone = 'UTC') {
   try {
     console.log('\n' + '='.repeat(80));
     console.log('🤖 [AI Agent] NEW CHAT REQUEST');
@@ -375,7 +375,7 @@ async function chatWithAgent(botId, userMessage, conversationHistory = []) {
  * Execute appointment booking
  * Integrates with Flossly API and Google Calendar (via n8n)
  */
-async function executeBookAppointment(botConfig, appointmentData) {
+async function executeBookAppointment(botConfig, appointmentData, userTimezone = 'UTC') {
   try {
     console.log('\n🏥 [APPOINTMENT BOOKING] Starting booking process...');
     console.log('📋 [APPOINTMENT BOOKING] Data received:', JSON.stringify(appointmentData, null, 2));
@@ -386,8 +386,8 @@ async function executeBookAppointment(botConfig, appointmentData) {
     const firstName = nameParts[0] || '-';
     const lastName = nameParts.slice(1).join(' ') || '-';
     
-    // Get user's timezone
-    const userTimezone = 'UTC'; // Default, can be enhanced later
+    // userTimezone is now passed as a parameter from the chat request
+    console.log('🌍 [APPOINTMENT BOOKING] User timezone:', userTimezone);
     
     // Prepare appointment data in Flossly API format
     const flosslyPayload = {
@@ -410,10 +410,15 @@ async function executeBookAppointment(botConfig, appointmentData) {
       timestamp: new Date().toISOString()
     };
     
-    // Send to n8n webhook for Google Calendar (non-blocking)
-    const webhookUrl = `${INTERNAL_API_BASE}/webhook/appointment-booking`;
+    // Send to n8n webhook for Google Calendar (non-blocking, match production widget flow)
+    const webhookUrl = `https://n8n.flossly.ai/webhook/appointment-booking`;
     console.log('📤 [APPOINTMENT BOOKING] Sending to n8n webhook:', webhookUrl);
-    axios.post(webhookUrl, flosslyPayload).catch(err => {
+    axios.post(webhookUrl, flosslyPayload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 10000
+    }).then(response => {
+      console.log('✅ [APPOINTMENT→N8N] Webhook response status:', response.status);
+    }).catch(err => {
       console.error('❌ [APPOINTMENT BOOKING] n8n webhook error:', err.message);
     });
     
@@ -796,7 +801,7 @@ async function* chatWithAgentStream(botId, userMessage, conversationHistory = []
             case 'book_appointment':
               toolResult = ACTION_TOOLS_DISABLED
                 ? actionToolsDisabledResult('book_appointment')
-                : await executeBookAppointment(botConfig, functionArgs);
+                : await executeBookAppointment(botConfig, functionArgs, userTimezone);
               break;
             
             case 'create_lead':

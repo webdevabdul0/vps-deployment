@@ -1571,7 +1571,7 @@ app.post('/api/ai/chat', async (req, res) => {
   console.log('📨 [Server] Request body:', JSON.stringify(req.body, null, 2));
   
   try {
-    const { botId, message, conversationHistory = [] } = req.body;
+    const { botId, message, conversationHistory = [], userTimezone } = req.body;
     
     // Validate input
     if (!botId || !message) {
@@ -1585,10 +1585,11 @@ app.post('/api/ai/chat', async (req, res) => {
     console.log(`✅ [Server] Validation passed - Bot: ${botId}, Message: "${message.substring(0, 100)}..."`);
     console.log(`📝 [Server] Conversation history length: ${conversationHistory.length}`);
     console.log(`⏱️  [Server] Calling chatWithAgent...`);
+    console.log('🌍 [Server] User timezone:', userTimezone || 'Not provided (will use UTC)');
     
     // Call AI agent
     const startTime = Date.now();
-    const response = await chatWithAgent(botId, message, conversationHistory);
+    const response = await chatWithAgent(botId, message, conversationHistory, userTimezone);
     const responseTime = Date.now() - startTime;
     
     console.log(`✅ [Server] chatWithAgent completed in ${responseTime}ms`);

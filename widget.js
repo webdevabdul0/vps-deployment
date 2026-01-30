@@ -2023,6 +2023,9 @@
         showTypingIndicator();
         
         try {
+            // Get user's timezone (same as traditional flow)
+            const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            
             const response = await fetch('/api/ai/chat', {
                 method: 'POST',
                 headers: {
@@ -2031,7 +2034,8 @@
                 body: JSON.stringify({
                     botId: botId,
                     message: userMessage,
-                    conversationHistory: aiConversationHistory
+                    conversationHistory: aiConversationHistory,
+                    userTimezone: userTimezone  // Pass timezone to AI agent
                 })
             });
             
