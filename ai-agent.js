@@ -18,6 +18,33 @@ const openai = new OpenAI({
 // Override via INTERNAL_API_BASE (recommended in production)
 const INTERNAL_API_BASE = process.env.INTERNAL_API_BASE || `http://localhost:${process.env.PORT || 3001}`;
 
+// Diagnostics: this is a very common root cause when tools "don't run" (they hit the wrong server).
+console.log('[AI Agent] INTERNAL_API_BASE =', INTERNAL_API_BASE);
+if (/localhost:3003/.test(INTERNAL_API_BASE)) {
+  console.warn('[AI Agent] WARNING: INTERNAL_API_BASE is set to localhost:3003. If your widget server runs on 3001 or on https://widget.flossly.ai, tool calls may go to the wrong place.');
+}
+if (!/^https?:\/\//.test(INTERNAL_API_BASE)) {
+  console.warn('[AI Agent] WARNING: INTERNAL_API_BASE does not look like a URL:', INTERNAL_API_BASE);
+}
+
+// Safety guard: in production, we should not be calling localhost.
+// This prevents the assistant from claiming actions succeeded when requests went to the wrong host.
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const INTERNAL_API_LOOKS_LOCAL = /^(http:\/\/)?localhost(?::\d+)?/i.test(INTERNAL_API_BASE);
+const ACTION_TOOLS_DISABLED = NODE_ENV === 'production' && INTERNAL_API_LOOKS_LOCAL;
+
+if (ACTION_TOOLS_DISABLED) {
+  console.error('[AI Agent] CRITICAL: Action tools are DISABLED because NODE_ENV=production and INTERNAL_API_BASE points to localhost:', INTERNAL_API_BASE);
+}
+
+function actionToolsDisabledResult(actionName) {
+  return {
+    success: false,
+    error: 'Action tools disabled: misconfigured INTERNAL_API_BASE',
+    message: `I can't complete "${actionName}" right now because the server is misconfigured (INTERNAL_API_BASE points to localhost in production). Please contact the site admin to set INTERNAL_API_BASE to the correct public URL (e.g., https://widget.flossly.ai) and try again.`
+  };
+}
+
 /**
  * Load bot configuration
  */
@@ -81,6 +108,8 @@ ${capabilities}
 
 2. **Book Appointments**: When someone wants to book an appointment:
    - Collect: name, email, phone, preferred date, preferred time, treatment type
+   - If the user message already contains ALL required fields, call "book_appointment" immediately (do NOT re-ask)
+   - If any required field is missing, ask only for the missing field(s)
    - Ask conversationally - don't use a form-like approach
    - Once you have ALL required info, you MUST use the "book_appointment" tool
    - NEVER say an appointment is booked unless the tool returns success
@@ -89,6 +118,8 @@ ${capabilities}
 
 3. **Create Leads**: For treatment enquiries or quote requests:
    - Collect: name, email, phone (optional), treatment interest
+   - If the user message already contains name + email + treatment interest, call "create_lead" immediately (do NOT ask extra questions)
+   - If any required field is missing, ask only for the missing field(s)
    - You MUST use the "create_lead" tool - never skip this step
    - NEVER say a lead is created unless the tool returns success
    - Wait for the tool result before confirming
@@ -229,15 +260,21 @@ async function chatWithAgent(botId, userMessage, conversationHistory = []) {
               break;
             
             case 'book_appointment':
-              toolResult = await executeBookAppointment(botConfig, functionArgs);
+              toolResult = ACTION_TOOLS_DISABLED
+                ? actionToolsDisabledResult('book_appointment')
+                : await executeBookAppointment(botConfig, functionArgs);
               break;
             
             case 'create_lead':
-              toolResult = await executeCreateLead(botConfig, functionArgs);
+              toolResult = ACTION_TOOLS_DISABLED
+                ? actionToolsDisabledResult('create_lead')
+                : await executeCreateLead(botConfig, functionArgs);
               break;
             
             case 'schedule_callback':
-              toolResult = await executeScheduleCallback(botConfig, functionArgs);
+              toolResult = ACTION_TOOLS_DISABLED
+                ? actionToolsDisabledResult('schedule_callback')
+                : await executeScheduleCallback(botConfig, functionArgs);
               break;
             
             default:
@@ -567,23 +604,27 @@ async function executeScheduleCallback(botConfig, callbackData) {
     
     const result = response.data;
     
-    // Check for success response (n8n webhook may return different structure)
-    if (result.success === true || response.status === 200) {
+    // Determine success based on body, not just HTTP 200.
+    // Our server returns HTTP 200 even when n8n fails, with { success:false, ... }.
+    const isSuccess = result?.success === true || result?.code === 1;
+
+    if (isSuccess) {
       console.log('✅ [CALLBACK SCHEDULING] SUCCESS - Callback scheduled!');
       return {
         success: true,
         message: `Perfect! I've scheduled a callback for you. Our team will reach out ${callbackData.preferredTime || 'soon'}.`,
-        callbackId: result.callbackId || 'CB-' + Date.now(),
+        callbackId: result.callbackId || result.data?.callbackId || 'CB-' + Date.now(),
         data: result.data
       };
-    } else {
-      console.log('❌ [CALLBACK SCHEDULING] FAILED - API returned error');
-      return {
-        success: false,
-        message: result.message || 'Sorry, there was an error scheduling your callback. Please contact us directly.',
-        error: result.error || 'Callback scheduling failed'
-      };
     }
+
+    console.log('❌ [CALLBACK SCHEDULING] FAILED - Downstream returned unsuccessful response');
+    return {
+      success: false,
+      message: result?.message || 'Sorry, there was an error scheduling your callback. Please contact us directly.',
+      error: result?.error || 'Callback scheduling failed',
+      statusCode: response.status
+    };
     
   } catch (error) {
     console.error('❌ [CALLBACK SCHEDULING] EXCEPTION:', error.message);
@@ -685,15 +726,21 @@ async function* chatWithAgentStream(botId, userMessage, conversationHistory = []
               break;
             
             case 'book_appointment':
-              toolResult = await executeBookAppointment(botConfig, functionArgs);
+              toolResult = ACTION_TOOLS_DISABLED
+                ? actionToolsDisabledResult('book_appointment')
+                : await executeBookAppointment(botConfig, functionArgs);
               break;
             
             case 'create_lead':
-              toolResult = await executeCreateLead(botConfig, functionArgs);
+              toolResult = ACTION_TOOLS_DISABLED
+                ? actionToolsDisabledResult('create_lead')
+                : await executeCreateLead(botConfig, functionArgs);
               break;
             
             case 'schedule_callback':
-              toolResult = await executeScheduleCallback(botConfig, functionArgs);
+              toolResult = ACTION_TOOLS_DISABLED
+                ? actionToolsDisabledResult('schedule_callback')
+                : await executeScheduleCallback(botConfig, functionArgs);
               break;
             
             default:
