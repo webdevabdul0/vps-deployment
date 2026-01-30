@@ -2023,7 +2023,7 @@
         showTypingIndicator();
         
         try {
-            const response = await fetch('https://widget.flossly.ai/api/ai/chat', {
+            const response = await fetch('/api/ai/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

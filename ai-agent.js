@@ -417,8 +417,8 @@ async function executeBookAppointment(botConfig, appointmentData) {
       console.error('❌ [APPOINTMENT BOOKING] n8n webhook error:', err.message);
     });
     
-    // Send to Flossly API endpoint
-    const flosslyApiUrl = `${INTERNAL_API_BASE}/api/flossly/appointment`;
+    // Send to Flossly API endpoint (use production URL like traditional widget)
+    const flosslyApiUrl = `https://widget.flossly.ai/api/flossly/appointment`;
     console.log('📤 [APPOINTMENT BOOKING] Sending to Flossly API:', flosslyApiUrl);
     console.log('📦 [APPOINTMENT BOOKING] Payload:', JSON.stringify(flosslyPayload, null, 2));
     
@@ -441,6 +441,40 @@ async function executeBookAppointment(botConfig, appointmentData) {
     // Flossly API returns code: 1 for success, code: 0 for error
     if (result.code === 1 || result.success === true || response.status === 200) {
       console.log('✅ [APPOINTMENT BOOKING] SUCCESS - Appointment booked!');
+
+      // Also create a lead in Flossly (non-blocking), like production flows
+      try {
+        const flosslyLeadPayload = {
+          botId: botConfig.botId,
+          botName: botConfig.name || 'AI Assistant',
+          type: 'appointment_booking',
+          customer: {
+            email: appointmentData.email || '',
+            name: appointmentData.patientName || '',
+            phone: appointmentData.phone || ''
+          },
+          treatment: {
+            name: appointmentData.treatmentType || 'Consultation',
+            notes: appointmentData.notes || ''
+          },
+          company: {
+            name: botConfig.companyName || '',
+            ownerEmail: botConfig.companyOwnerEmail || '',
+            phone: botConfig.companyPhone || '',
+            website: botConfig.companyWebsite || ''
+          },
+          timestamp: new Date().toISOString()
+        };
+        const flosslyLeadApiUrl = `https://widget.flossly.ai/api/flossly/lead`;
+        console.log('📤 [APPOINTMENT→LEAD] Creating lead at:', flosslyLeadApiUrl);
+        console.log('📦 [APPOINTMENT→LEAD] Payload:', JSON.stringify(flosslyLeadPayload, null, 2));
+        axios.post(flosslyLeadApiUrl, flosslyLeadPayload, { headers: { 'Content-Type': 'application/json' } })
+          .then(r => console.log('✅ [APPOINTMENT→LEAD] Lead creation response status:', r.status))
+          .catch(e => console.error('❌ [APPOINTMENT→LEAD] Lead creation error:', e.message));
+      } catch (e) {
+        console.error('❌ [APPOINTMENT→LEAD] Exception building/sending lead:', e.message);
+      }
+
       return {
         success: true,
         message: `Perfect! I've booked your appointment for ${appointmentData.date} at ${appointmentData.time}. You'll receive a confirmation email shortly.`,
@@ -511,8 +545,8 @@ async function executeCreateLead(botConfig, leadData) {
       timestamp: new Date().toISOString()
     };
     
-    // Send to Flossly Lead API endpoint
-    const flosslyLeadApiUrl = `${INTERNAL_API_BASE}/api/flossly/lead`;
+    // Send to Flossly Lead API endpoint (use production URL like traditional widget)
+    const flosslyLeadApiUrl = `https://widget.flossly.ai/api/flossly/lead`;
     console.log('📤 [LEAD CREATION] Sending to Flossly Lead API:', flosslyLeadApiUrl);
     console.log('📦 [LEAD CREATION] Payload:', JSON.stringify(flosslyLeadPayload, null, 2));
     
@@ -588,8 +622,8 @@ async function executeScheduleCallback(botConfig, callbackData) {
       timestamp: new Date().toISOString()
     };
     
-    // Send to n8n callback webhook endpoint
-    const callbackWebhookUrl = `${INTERNAL_API_BASE}/webhook/gmail-callback`;
+    // Send to n8n callback webhook endpoint (match production widget flow)
+    const callbackWebhookUrl = `https://n8n.flossly.ai/webhook/gmail-callback`;
     console.log('📤 [CALLBACK SCHEDULING] Sending to n8n webhook:', callbackWebhookUrl);
     console.log('📦 [CALLBACK SCHEDULING] Payload:', JSON.stringify(callbackPayload, null, 2));
     
@@ -610,6 +644,40 @@ async function executeScheduleCallback(botConfig, callbackData) {
 
     if (isSuccess) {
       console.log('✅ [CALLBACK SCHEDULING] SUCCESS - Callback scheduled!');
+
+      // Also create a lead in Flossly (non-blocking), like production flows
+      try {
+        const flosslyLeadPayload = {
+          botId: botConfig.botId,
+          botName: botConfig.name || 'AI Assistant',
+          type: 'callback_request',
+          customer: {
+            email: callbackData.email || '',
+            name: callbackData.patientName || '',
+            phone: callbackData.phone || ''
+          },
+          treatment: {
+            name: callbackData.reason || 'Callback Request',
+            notes: callbackData.notes || ''
+          },
+          company: {
+            name: botConfig.companyName || '',
+            ownerEmail: botConfig.companyOwnerEmail || '',
+            phone: botConfig.companyPhone || '',
+            website: botConfig.companyWebsite || ''
+          },
+          timestamp: new Date().toISOString()
+        };
+        const flosslyLeadApiUrl = `https://widget.flossly.ai/api/flossly/lead`;
+        console.log('📤 [CALLBACK→LEAD] Creating lead at:', flosslyLeadApiUrl);
+        console.log('📦 [CALLBACK→LEAD] Payload:', JSON.stringify(flosslyLeadPayload, null, 2));
+        axios.post(flosslyLeadApiUrl, flosslyLeadPayload, { headers: { 'Content-Type': 'application/json' } })
+          .then(r => console.log('✅ [CALLBACK→LEAD] Lead creation response status:', r.status))
+          .catch(e => console.error('❌ [CALLBACK→LEAD] Lead creation error:', e.message));
+      } catch (e) {
+        console.error('❌ [CALLBACK→LEAD] Exception building/sending lead:', e.message);
+      }
+
       return {
         success: true,
         message: `Perfect! I've scheduled a callback for you. Our team will reach out ${callbackData.preferredTime || 'soon'}.`,

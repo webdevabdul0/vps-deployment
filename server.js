@@ -240,6 +240,14 @@ app.get('/widget.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'widget.js'));
 });
 
+// Local test page (must be served over http, not file://, otherwise fetch() will fail)
+app.get(['/test-widget', '/test-widget.html'], (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  // Disable caching so changes are picked up immediately during local debugging
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'test-widget.html'));
+});
+
 // Health check (lightweight)
 app.get('/health', (req, res) => {
   res.json({ 
@@ -1559,25 +1567,47 @@ app.post('/webhook/appointment-booking', async (req, res) => {
  * Handles conversational AI with web browsing and tool calling
  */
 app.post('/api/ai/chat', async (req, res) => {
+  console.log('\n🌐 [Server] POST /api/ai/chat endpoint hit');
+  console.log('📨 [Server] Request body:', JSON.stringify(req.body, null, 2));
+  
   try {
     const { botId, message, conversationHistory = [] } = req.body;
     
     // Validate input
     if (!botId || !message) {
+      console.log('❌ [Server] Validation failed: Missing botId or message');
       return res.status(400).json({
         success: false,
         error: 'botId and message are required'
       });
     }
     
-    console.log(`[AI Chat] Bot ${botId}: "${message.substring(0, 50)}..."`);
+    console.log(`✅ [Server] Validation passed - Bot: ${botId}, Message: "${message.substring(0, 100)}..."`);
+    console.log(`📝 [Server] Conversation history length: ${conversationHistory.length}`);
+    console.log(`⏱️  [Server] Calling chatWithAgent...`);
     
     // Call AI agent
     const startTime = Date.now();
     const response = await chatWithAgent(botId, message, conversationHistory);
     const responseTime = Date.now() - startTime;
     
-    console.log(`[AI Chat] Response time: ${responseTime}ms`);
+    console.log(`✅ [Server] chatWithAgent completed in ${responseTime}ms`);
+    console.log(`📊 [Server] Response summary:`, {
+      success: response.success,
+      toolsUsed: response.toolsUsed,
+      contentLength: response.content?.length || 0,
+      hasToolDetails: !!response.toolDetails
+    });
+    
+    if (response.toolDetails && response.toolDetails.length > 0) {
+      console.log(`🔧 [Server] Tools executed:`, response.toolDetails.map(t => ({
+        name: t.name,
+        success: t.result?.success,
+        duration: t.duration
+      })));
+    }
+    
+    console.log(`📤 [Server] Sending response to client`);
     
     res.json({
       ...response,
@@ -1586,7 +1616,8 @@ app.post('/api/ai/chat', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('[AI Chat] Error:', error);
+    console.error('❌ [Server] Error in /api/ai/chat:', error.message);
+    console.error('❌ [Server] Stack:', error.stack);
     res.status(500).json({
       success: false,
       content: "I apologize, but I'm having trouble right now. Please try again or contact us directly.",

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flossy Widget Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        p {
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+
+        .test-info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        .test-info h3 {
+            margin-top: 0;
+            color: #8FE3A8;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        .status.loading {
+            background: #ffa500;
+            color: white;
+        }
+
+        .status.success {
+            background: #8FE3A8;
+            color: #333;
+        }
+
+        .status.error {
+            background: #ff4444;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🤖 Flossy Widget Test</h1>
+        <p>Testing the chat widget deployed on your VPS</p>
+
+        <div class="test-info">
+            <h3>Widget Status</h3>
+            <p>Widget Loading: <span id="widget-status" class="status loading">Loading...</span></p>
+            <p>VPS URL: <code>http://213.165.249.205/widget.js</code></p>
+            <p>Expected: Chat bubble should appear in bottom-right corner</p>
+        </div>
+
+        <div class="test-info">
+            <h3>Test Instructions</h3>
+            <ol style="text-align: left;">
+                <li>Look for the green chat bubble in the bottom-right corner</li>
+                <li>Click the chat bubble to open the widget</li>
+                <li>You should see: "Welcome to Your Company" messages</li>
+                <li>Try clicking "Request an appointment"</li>
+                <li>Test the conversation flow</li>
+            </ol>
+        </div>
+
+        <div class="test-info">
+            <h3>What to Test</h3>
+            <ul style="text-align: left;">
+                <li>✅ Chat bubble appears and is clickable</li>
+                <li>✅ Opening messages display correctly</li>
+                <li>✅ Appointment options are interactive</li>
+                <li>✅ Theme color (green) is applied</li>
+                <li>✅ Animations work smoothly</li>
+                <li>✅ Widget closes properly</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Flossy Chat Widget - Generated from your Bot Builder -->
+    <script>
+        window.flossyConfig = {"botId":"86d35a97-cd20-429b-af5e-a826fb4a1cfa"};
+        (function(d,s,id){
+          var js,fjs=d.getElementsByTagName(s)[0];
+          if(d.getElementById(id))return;
+          js=d.createElement(s);js.id=id;
+          js.src="http://localhost:3001/widget.js";
+          fjs.parentNode.insertBefore(js,fjs);
+        }(document,"script","flossy-widget"));
+      </script>
+</body>
+
+</html>
