@@ -117,6 +117,13 @@ Remember: You represent ${practiceName}. Be helpful, accurate, and professional 
  */
 async function chatWithAgent(botId, userMessage, conversationHistory = []) {
   try {
+    console.log('\n' + '='.repeat(80));
+    console.log('🤖 [AI Agent] NEW CHAT REQUEST');
+    console.log('='.repeat(80));
+    console.log('Bot ID:', botId);
+    console.log('User Message:', userMessage);
+    console.log('History Length:', conversationHistory.length);
+    
     // Load bot configuration
     const botConfig = await loadBotConfig(botId);
     
@@ -139,6 +146,8 @@ async function chatWithAgent(botId, userMessage, conversationHistory = []) {
     const toolDetails = []; // Store details of each tool execution
     
     // Initial API call
+    console.log('📡 [AI Agent] Calling OpenAI with', messages.length, 'messages and', tools.length, 'tools available');
+    
     let response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: messages,
@@ -150,8 +159,15 @@ async function chatWithAgent(botId, userMessage, conversationHistory = []) {
     
     let message = response.choices[0].message;
     
+    console.log('📨 [AI Agent] OpenAI Response:');
+    console.log('   - Has content:', !!message.content);
+    console.log('   - Has tool_calls:', !!message.tool_calls);
+    console.log('   - Tool calls count:', message.tool_calls?.length || 0);
+    
     // Handle tool calls (may require multiple rounds)
     while (message.tool_calls && message.tool_calls.length > 0 && toolExecutionCount < maxToolExecutions) {
+      console.log('\n🔧 [AI Agent] TOOL CALLS DETECTED:', message.tool_calls.length);
+      
       // Add assistant's message with tool calls to history
       messages.push({
         role: "assistant",
@@ -163,6 +179,9 @@ async function chatWithAgent(botId, userMessage, conversationHistory = []) {
       for (const toolCall of message.tool_calls) {
         const functionName = toolCall.function.name;
         const functionArgs = JSON.parse(toolCall.function.arguments);
+        
+        console.log(`\n📞 [AI Agent] CALLING TOOL: ${functionName}`);
+        console.log('📝 [AI Agent] Tool Arguments:', JSON.stringify(functionArgs, null, 2));
         
         let toolResult;
         const toolStartTime = Date.now();
@@ -228,6 +247,9 @@ async function chatWithAgent(botId, userMessage, conversationHistory = []) {
         
         const toolDuration = Date.now() - toolStartTime;
         
+        console.log(`✅ [AI Agent] TOOL COMPLETED: ${functionName} (${toolDuration}ms)`);
+        console.log('📊 [AI Agent] Tool Result:', JSON.stringify(toolResult, null, 2));
+        
         // Store tool details for response
         toolDetails.push({
           name: functionName,
@@ -245,6 +267,7 @@ async function chatWithAgent(botId, userMessage, conversationHistory = []) {
       }
       
       toolExecutionCount++;
+      console.log(`🔄 [AI Agent] Tool execution count: ${toolExecutionCount}/${maxToolExecutions}`);
       
       // Get next response from AI with tool results
       response = await openai.chat.completions.create({
@@ -264,8 +287,14 @@ async function chatWithAgent(botId, userMessage, conversationHistory = []) {
     const failedTools = toolDetails.filter(t => t?.result?.success === false);
     const lastTool = toolDetails[toolDetails.length - 1];
 
+    console.log(`\n📋 [AI Agent] FINAL SUMMARY:`);
+    console.log(`   - Tools called: ${toolExecutionCount}`);
+    console.log(`   - Failed tools: ${failedTools.length}`);
+    console.log(`   - Tool details:`, toolDetails.map(t => ({ name: t.name, success: t.result?.success })));
+
     let finalContent = message.content;
     if (failedTools.length > 0) {
+      console.log('⚠️ [AI Agent] TOOL FAILURE DETECTED - Overriding AI response');
       // Prefer the tool's own user-facing message if provided
       const toolMsg = lastTool?.result?.message || failedTools[0]?.result?.message;
       finalContent = toolMsg || "I couldn't complete that request due to a technical issue. Please try again or contact the practice directly.";
@@ -303,7 +332,8 @@ async function chatWithAgent(botId, userMessage, conversationHistory = []) {
  */
 async function executeBookAppointment(botConfig, appointmentData) {
   try {
-    console.log('[AI Agent] Booking appointment:', appointmentData);
+    console.log('\n🏥 [APPOINTMENT BOOKING] Starting booking process...');
+    console.log('📋 [APPOINTMENT BOOKING] Data received:', JSON.stringify(appointmentData, null, 2));
     
     // Parse patient name into first and last name
     const patientName = appointmentData.patientName || '';
@@ -337,16 +367,23 @@ async function executeBookAppointment(botConfig, appointmentData) {
     
     // Send to n8n webhook for Google Calendar (non-blocking)
     const webhookUrl = `${INTERNAL_API_BASE}/webhook/appointment-booking`;
+    console.log('📤 [APPOINTMENT BOOKING] Sending to n8n webhook:', webhookUrl);
     axios.post(webhookUrl, flosslyPayload).catch(err => {
-      console.error('[AI Agent] n8n webhook error:', err.message);
+      console.error('❌ [APPOINTMENT BOOKING] n8n webhook error:', err.message);
     });
     
     // Send to Flossly API endpoint
     const flosslyApiUrl = `${INTERNAL_API_BASE}/api/flossly/appointment`;
+    console.log('📤 [APPOINTMENT BOOKING] Sending to Flossly API:', flosslyApiUrl);
+    console.log('📦 [APPOINTMENT BOOKING] Payload:', JSON.stringify(flosslyPayload, null, 2));
+    
     const response = await axios.post(flosslyApiUrl, flosslyPayload, {
       headers: { 'Content-Type': 'application/json' },
       validateStatus: (status) => status < 500 // Don't throw on 4xx errors
     });
+    
+    console.log('📥 [APPOINTMENT BOOKING] API Response Status:', response.status);
+    console.log('📥 [APPOINTMENT BOOKING] API Response Data:', JSON.stringify(response.data, null, 2));
     
     const result = response.data;
     
@@ -358,6 +395,7 @@ async function executeBookAppointment(botConfig, appointmentData) {
     
     // Flossly API returns code: 1 for success, code: 0 for error
     if (result.code === 1 || result.success === true || response.status === 200) {
+      console.log('✅ [APPOINTMENT BOOKING] SUCCESS - Appointment booked!');
       return {
         success: true,
         message: `Perfect! I've booked your appointment for ${appointmentData.date} at ${appointmentData.time}. You'll receive a confirmation email shortly.`,
@@ -365,6 +403,7 @@ async function executeBookAppointment(botConfig, appointmentData) {
         data: result.data
       };
     } else if (isConflict) {
+      console.log('⚠️ [APPOINTMENT BOOKING] CONFLICT - Time slot already booked');
       return {
         success: false,
         conflict: true,
@@ -373,6 +412,7 @@ async function executeBookAppointment(botConfig, appointmentData) {
         error: 'Time slot conflict'
       };
     } else {
+      console.log('❌ [APPOINTMENT BOOKING] FAILED - API returned error');
       return {
         success: false,
         message: result.message || 'Sorry, there was an error booking your appointment. Please try again or contact us directly.',
@@ -381,7 +421,8 @@ async function executeBookAppointment(botConfig, appointmentData) {
     }
     
   } catch (error) {
-    console.error('[AI Agent] Appointment booking error:', error);
+    console.error('❌ [APPOINTMENT BOOKING] EXCEPTION:', error.message);
+    console.error('❌ [APPOINTMENT BOOKING] Stack:', error.stack);
     return {
       success: false,
       error: error.message,
@@ -396,7 +437,8 @@ async function executeBookAppointment(botConfig, appointmentData) {
  */
 async function executeCreateLead(botConfig, leadData) {
   try {
-    console.log('[AI Agent] Creating lead:', leadData);
+    console.log('\n📝 [LEAD CREATION] Starting lead creation process...');
+    console.log('📋 [LEAD CREATION] Data received:', JSON.stringify(leadData, null, 2));
     
     // Prepare lead data for Flossly Lead API
     const flosslyLeadPayload = {
@@ -426,15 +468,22 @@ async function executeCreateLead(botConfig, leadData) {
     
     // Send to Flossly Lead API endpoint
     const flosslyLeadApiUrl = `${INTERNAL_API_BASE}/api/flossly/lead`;
+    console.log('📤 [LEAD CREATION] Sending to Flossly Lead API:', flosslyLeadApiUrl);
+    console.log('📦 [LEAD CREATION] Payload:', JSON.stringify(flosslyLeadPayload, null, 2));
+    
     const response = await axios.post(flosslyLeadApiUrl, flosslyLeadPayload, {
       headers: { 'Content-Type': 'application/json' },
       validateStatus: (status) => status < 500 // Don't throw on 4xx errors
     });
     
+    console.log('📥 [LEAD CREATION] API Response Status:', response.status);
+    console.log('📥 [LEAD CREATION] API Response Data:', JSON.stringify(response.data, null, 2));
+    
     const result = response.data;
     
     // Flossly API returns code: 1 for success, code: 0 for error
     if (result.code === 1 || result.success === true || response.status === 200) {
+      console.log('✅ [LEAD CREATION] SUCCESS - Lead created!');
       return {
         success: true,
         message: `Great! I've recorded your interest in ${leadData.treatment}. Our team will reach out to you soon with more information.`,
@@ -442,6 +491,7 @@ async function executeCreateLead(botConfig, leadData) {
         data: result.data
       };
     } else {
+      console.log('❌ [LEAD CREATION] FAILED - API returned error');
       return {
         success: false,
         message: result.message || 'Sorry, there was an error recording your enquiry. Please contact us directly.',
@@ -450,7 +500,8 @@ async function executeCreateLead(botConfig, leadData) {
     }
     
   } catch (error) {
-    console.error('[AI Agent] Lead creation error:', error);
+    console.error('❌ [LEAD CREATION] EXCEPTION:', error.message);
+    console.error('❌ [LEAD CREATION] Stack:', error.stack);
     return {
       success: false,
       error: error.message,
@@ -465,7 +516,8 @@ async function executeCreateLead(botConfig, leadData) {
  */
 async function executeScheduleCallback(botConfig, callbackData) {
   try {
-    console.log('[AI Agent] Scheduling callback:', callbackData);
+    console.log('\n📞 [CALLBACK SCHEDULING] Starting callback scheduling process...');
+    console.log('📋 [CALLBACK SCHEDULING] Data received:', JSON.stringify(callbackData, null, 2));
     
     // Prepare callback data for n8n webhook
     const callbackPayload = {
@@ -493,16 +545,23 @@ async function executeScheduleCallback(botConfig, callbackData) {
     
     // Send to n8n callback webhook endpoint
     const callbackWebhookUrl = `${INTERNAL_API_BASE}/webhook/gmail-callback`;
+    console.log('📤 [CALLBACK SCHEDULING] Sending to n8n webhook:', callbackWebhookUrl);
+    console.log('📦 [CALLBACK SCHEDULING] Payload:', JSON.stringify(callbackPayload, null, 2));
+    
     const response = await axios.post(callbackWebhookUrl, callbackPayload, {
       headers: { 'Content-Type': 'application/json' },
       validateStatus: (status) => status < 500, // Don't throw on 4xx errors
       timeout: 10000 // 10 second timeout
     });
     
+    console.log('📥 [CALLBACK SCHEDULING] API Response Status:', response.status);
+    console.log('📥 [CALLBACK SCHEDULING] API Response Data:', JSON.stringify(response.data, null, 2));
+    
     const result = response.data;
     
     // Check for success response (n8n webhook may return different structure)
     if (result.success === true || response.status === 200) {
+      console.log('✅ [CALLBACK SCHEDULING] SUCCESS - Callback scheduled!');
       return {
         success: true,
         message: `Perfect! I've scheduled a callback for you. Our team will reach out ${callbackData.preferredTime || 'soon'}.`,
@@ -510,6 +569,7 @@ async function executeScheduleCallback(botConfig, callbackData) {
         data: result.data
       };
     } else {
+      console.log('❌ [CALLBACK SCHEDULING] FAILED - API returned error');
       return {
         success: false,
         message: result.message || 'Sorry, there was an error scheduling your callback. Please contact us directly.',
@@ -518,7 +578,8 @@ async function executeScheduleCallback(botConfig, callbackData) {
     }
     
   } catch (error) {
-    console.error('[AI Agent] Callback scheduling error:', error);
+    console.error('❌ [CALLBACK SCHEDULING] EXCEPTION:', error.message);
+    console.error('❌ [CALLBACK SCHEDULING] Stack:', error.stack);
     
     // More specific error messages
     if (error.code === 'ECONNREFUSED') {
