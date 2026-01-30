@@ -14,6 +14,10 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
+// Internal API base URL (AI agent runs server-side; this should point to THIS server)
+// Override via INTERNAL_API_BASE (recommended in production)
+const INTERNAL_API_BASE = process.env.INTERNAL_API_BASE || `http://localhost:${process.env.PORT || 3001}`;
+
 /**
  * Load bot configuration
  */
@@ -255,16 +259,28 @@ async function chatWithAgent(botId, userMessage, conversationHistory = []) {
       message = response.choices[0].message;
     }
     
+    // If a tool was called and it failed, do not allow a "success" tone without surfacing the failure.
+    // This prevents the model from claiming an appointment/lead/callback was created when the API call failed.
+    const failedTools = toolDetails.filter(t => t?.result?.success === false);
+    const lastTool = toolDetails[toolDetails.length - 1];
+
+    let finalContent = message.content;
+    if (failedTools.length > 0) {
+      // Prefer the tool's own user-facing message if provided
+      const toolMsg = lastTool?.result?.message || failedTools[0]?.result?.message;
+      finalContent = toolMsg || "I couldn't complete that request due to a technical issue. Please try again or contact the practice directly.";
+    }
+
     // Build conversation history for next turn (keep last 10 messages)
     const updatedHistory = [
       ...conversationHistory,
       { role: "user", content: userMessage },
-      { role: "assistant", content: message.content }
+      { role: "assistant", content: finalContent }
     ].slice(-10); // Keep last 5 exchanges (10 messages)
     
     return {
       success: true,
-      content: message.content,
+      content: finalContent,
       conversationHistory: updatedHistory,
       toolsUsed: toolExecutionCount,
       toolDetails: toolDetails // Include detailed tool execution info
@@ -320,13 +336,13 @@ async function executeBookAppointment(botConfig, appointmentData) {
     };
     
     // Send to n8n webhook for Google Calendar (non-blocking)
-    const webhookUrl = 'http://localhost:3003/webhook/appointment-booking';
+    const webhookUrl = `${INTERNAL_API_BASE}/webhook/appointment-booking`;
     axios.post(webhookUrl, flosslyPayload).catch(err => {
       console.error('[AI Agent] n8n webhook error:', err.message);
     });
     
     // Send to Flossly API endpoint
-    const flosslyApiUrl = 'http://localhost:3003/api/flossly/appointment';
+    const flosslyApiUrl = `${INTERNAL_API_BASE}/api/flossly/appointment`;
     const response = await axios.post(flosslyApiUrl, flosslyPayload, {
       headers: { 'Content-Type': 'application/json' },
       validateStatus: (status) => status < 500 // Don't throw on 4xx errors
@@ -408,7 +424,7 @@ async function executeCreateLead(botConfig, leadData) {
     };
     
     // Send to Flossly Lead API endpoint
-    const flosslyLeadApiUrl = 'http://localhost:3003/api/flossly/lead';
+    const flosslyLeadApiUrl = `${INTERNAL_API_BASE}/api/flossly/lead`;
     const response = await axios.post(flosslyLeadApiUrl, flosslyLeadPayload, {
       headers: { 'Content-Type': 'application/json' },
       validateStatus: (status) => status < 500 // Don't throw on 4xx errors
@@ -474,7 +490,7 @@ async function executeScheduleCallback(botConfig, callbackData) {
     };
     
     // Send to n8n callback webhook endpoint
-    const callbackWebhookUrl = 'http://localhost:3003/webhook/gmail-callback';
+    const callbackWebhookUrl = `${INTERNAL_API_BASE}/webhook/gmail-callback`;
     const response = await axios.post(callbackWebhookUrl, callbackPayload, {
       headers: { 'Content-Type': 'application/json' },
       validateStatus: (status) => status < 500, // Don't throw on 4xx errors
