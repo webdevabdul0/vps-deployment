@@ -1,0 +1,1820 @@
+/**
+ * Flossy Chat Widget Server - Optimized for Shared VPS
+ * Lightweight Express server designed to run alongside n8n
+ */
+
+// Load environment variables
+require('dotenv').config();
+
+const express = require('express');
+const path = require('path');
+const cors = require('cors');
+const compression = require('compression');
+const { google } = require('googleapis');
+const fs = require('fs');
+const axios = require('axios');
+
+// Import AI Agent
+const { chatWithAgent } = require('./ai-agent');
+
+const app = express();
+const PORT = process.env.PORT || 3001; // Different port from n8n (usually 5678)
+
+// Google OAuth Configuration
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const REDIRECT_URI = process.env.REDIRECT_URI || 'https://widget.flossly.ai/oauth2/callback';
+
+// Flossly API Configuration
+const FLOSSLY_API_BASE = process.env.FLOSSLY_API_BASE || 'https://dev.flossly.ai';
+
+// Validate required environment variables
+if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+  console.error('❌ Missing required environment variables:');
+  console.error('   GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set');
+  console.error('   Please check your .env file or environment variables');
+  process.exit(1);
+}
+
+// Initialize Google OAuth2 client
+const oauth2Client = new google.auth.OAuth2(
+  GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET,
+  REDIRECT_URI
+);
+
+// Simple JSON file storage
+const DATA_FILE = './flossy_data.json';
+
+// Initialize data file if it doesn't exist
+if (!fs.existsSync(DATA_FILE)) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify({
+    clients: {},
+    google_tokens: {},
+    appointments: [],
+    bot_configs: {}, // Store bot configurations by botId
+    bot_tokens: {} // Store access tokens by botId for Flossly API calls
+  }, null, 2));
+}
+
+// Helper functions for JSON storage
+const readData = () => {
+  try {
+    const data = fs.readFileSync(DATA_FILE, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    console.error('Error reading data file:', error);
+    return { clients: {}, google_tokens: {}, appointments: [], bot_configs: {}, bot_tokens: {} };
+  }
+};
+
+const writeData = (data) => {
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    return true;
+  } catch (error) {
+    console.error('Error writing data file:', error);
+    return false;
+  }
+};
+
+// Helper function to generate available time slots
+function generateAvailableSlots(date, events, duration, userTimezone = 'UTC') {
+  const slots = [];
+  const startHour = 9; // 9 AM
+  const endHour = 17; // 5 PM
+  const interval = 30; // 30 minutes
+  
+  // Convert events to time ranges in the user's timezone
+  const busyTimes = events.map(event => {
+    const start = new Date(event.start.dateTime || event.start.date);
+    const end = new Date(event.end.dateTime || event.end.date);
+    
+    // Convert to user's timezone for comparison
+    const startInUserTz = new Date(start.toLocaleString("en-US", {timeZone: userTimezone}));
+    const endInUserTz = new Date(end.toLocaleString("en-US", {timeZone: userTimezone}));
+    
+    return {
+      start: startInUserTz.getTime(),
+      end: endInUserTz.getTime()
+    };
+  });
+  
+  console.log('Slot generation for user timezone:', {
+    date,
+    userTimezone,
+    busyTimes: busyTimes.map(bt => ({
+      start: new Date(bt.start).toLocaleString("en-US", {timeZone: userTimezone}),
+      end: new Date(bt.end).toLocaleString("en-US", {timeZone: userTimezone})
+    }))
+  });
+  
+  // Generate slots from 9 AM to 5 PM in the user's timezone
+  for (let hour = startHour; hour < endHour; hour++) {
+    for (let minute = 0; minute < 60; minute += interval) {
+      const slotTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+      
+      // Create slot time in user's timezone
+      const slotStart = new Date(`${date}T${slotTime}:00`);
+      const slotEnd = new Date(slotStart.getTime() + duration * 60000);
+      
+      // Check if this slot conflicts with any existing events
+      const isAvailable = !busyTimes.some(busy => {
+        return (slotStart.getTime() < busy.end && slotEnd.getTime() > busy.start);
+      });
+      
+      if (isAvailable) {
+        slots.push({
+          time: slotTime,
+          displayTime: formatTime(hour, minute),
+          available: true
+        });
+      }
+    }
+  }
+  
+  return slots;
+}
+
+// Helper function to format time for display
+function formatTime(hour, minute) {
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
+  return `${displayHour}:${minute.toString().padStart(2, '0')} ${period}`;
+}
+
+// Helper function to generate smart appointment suggestions
+function generateSmartSuggestions(preferredDate, preferredTime, availableSlots, existingEvents) {
+  const suggestions = [];
+  const preferredDateTime = new Date(`${preferredDate}T${preferredTime}`);
+  
+  // Find the closest available times
+  const sortedSlots = availableSlots
+    .map(slot => ({
+      ...slot,
+      timeValue: new Date(`${preferredDate}T${slot.time}`).getTime()
+    }))
+    .sort((a, b) => Math.abs(a.timeValue - preferredDateTime.getTime()) - Math.abs(b.timeValue - preferredDateTime.getTime()));
+  
+  // Add top 3 closest suggestions
+  const topSuggestions = sortedSlots.slice(0, 3);
+  
+  topSuggestions.forEach((slot, index) => {
+    const timeDiff = Math.abs(slot.timeValue - preferredDateTime.getTime());
+    const hoursDiff = Math.round(timeDiff / (1000 * 60 * 60));
+    const minutesDiff = Math.round(timeDiff / (1000 * 60));
+    
+    let message = '';
+    if (minutesDiff < 60) {
+      message = `How about ${slot.displayTime}? (${minutesDiff} minutes ${slot.timeValue > preferredDateTime.getTime() ? 'later' : 'earlier'})`;
+    } else {
+      message = `How about ${slot.displayTime}? (${hoursDiff} hour${hoursDiff > 1 ? 's' : ''} ${slot.timeValue > preferredDateTime.getTime() ? 'later' : 'earlier'})`;
+    }
+    
+    suggestions.push({
+      time: slot.time,
+      displayTime: slot.displayTime,
+      message: message,
+      priority: index + 1
+    });
+  });
+  
+  // Add alternative day suggestions if we have very few slots
+  if (availableSlots.length < 3) {
+    const tomorrow = new Date(preferredDate);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    suggestions.push({
+      time: '09:00',
+      displayTime: '9:00 AM',
+      message: `We have more availability tomorrow (${tomorrow.toLocaleDateString()}). Would you like to book for tomorrow?`,
+      priority: 4,
+      alternativeDay: true
+    });
+  }
+  
+  return suggestions;
+}
+
+// Middleware (optimized for performance)
+app.use(compression()); // Gzip compression
+// CORS configuration - allow all origins for widget
+app.use(cors({
+  origin: true, // Allow all origins
+  methods: ['GET', 'POST', 'OPTIONS', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept', 'Cache-Control', 'Pragma', 'Expires'],
+  credentials: false
+}));
+
+// JSON parsing with size limit (prevent abuse)
+app.use(express.json({ limit: '1mb' }));
+
+// Explicit CORS headers as fallback (in addition to cors middleware)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Origin, X-Requested-With, Accept, Cache-Control, Pragma, Expires');
+  res.setHeader('Access-Control-Allow-Credentials', 'false');
+  
+  // Security headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  next();
+});
+
+// Serve widget.js with aggressive caching
+app.get('/widget.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=7200'); // 1hr browser, 2hr CDN
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Vary', 'Accept-Encoding');
+  
+  // Serve compressed if available
+  res.sendFile(path.join(__dirname, 'widget.js'));
+});
+
+// Health check (lightweight)
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage().rss / 1024 / 1024 // MB
+  });
+});
+
+// Bot Configuration API Endpoints (for script shortening only)
+
+// Get bot configuration by botId (public endpoint for widget)
+// This fetches from the main dev.flossly.ai API and caches it
+// CORS is handled by the middleware above
+app.get('/api/bot-config/:botId', async (req, res) => {
+  const { botId } = req.params;
+  
+  try {
+    // First check local cache - serve if exists (regardless of age)
+    const data = readData();
+    const cachedConfig = data.bot_configs[botId];
+    
+    if (cachedConfig) {
+      console.log(`Using cached config for botId: ${botId} (cached at: ${cachedConfig.cachedAt || 'unknown'})`);
+      res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=600');
+      
+      return res.json({
+        success: true,
+        data: cachedConfig,
+        botId: botId,
+        cached: true,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // If not in cache, try to fetch from main API as fallback (if public endpoint exists)
+    console.log(`Config not found in VPS cache for botId: ${botId}, trying main API...`);
+    
+    try {
+      let response;
+      try {
+        // Try public endpoint if it exists
+        response = await axios.get(`${FLOSSLY_API_BASE}/chatbot/public/${botId}`, {
+        timeout: 10000
+      });
+      } catch (publicError) {
+        // If no public endpoint, config must be saved to VPS first
+        throw new Error(`Config not found in VPS cache. Please save the bot configuration in Bot Builder first.`);
+      }
+      
+      // Response format: { code: 1, data: {...} } where code: 1 means success
+      if (response.data.code === 1 && response.data.data) {
+        const botConfig = response.data.data;
+        
+        // Cache the config locally for future requests
+        data.bot_configs[botId] = {
+          ...botConfig,
+          cachedAt: new Date().toISOString()
+        };
+        writeData(data);
+        
+        console.log(`Config fetched from main API and cached for botId: ${botId}`);
+        
+        // Add cache headers for better performance
+        res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=600');
+        
+        res.json({
+          success: true,
+          data: botConfig,
+          botId: botId,
+          cached: false,
+          timestamp: new Date().toISOString()
+        });
+        
+      } else {
+        console.log(`Main API returned error for botId: ${botId}`, response.data);
+        res.status(404).json({ 
+          success: false, 
+          error: 'Bot configuration not found. Please save the bot configuration in Bot Builder first.',
+          botId: botId
+        });
+      }
+    } catch (apiError) {
+      console.log(`Main API error for botId: ${botId}`, apiError.response?.data || apiError.message);
+      res.status(404).json({ 
+        success: false, 
+        error: 'Bot configuration not found. Please save the bot configuration in Bot Builder first.',
+        botId: botId,
+        details: apiError.response?.data?.message || apiError.message
+      });
+    }
+    
+  } catch (error) {
+    console.error('Error fetching bot config:', error);
+    
+    // If main API fails, try to serve from cache as fallback
+    const data = readData();
+    const cachedConfig = data.bot_configs[botId];
+    
+    if (cachedConfig) {
+      console.log(`Serving stale cache for botId: ${botId} due to API error`);
+      res.setHeader('Cache-Control', 'public, max-age=60'); // Shorter cache for stale data
+      
+      return res.json({
+        success: true,
+        data: cachedConfig,
+        botId: botId,
+        cached: true,
+        stale: true,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch bot configuration from main API' 
+    });
+  }
+});
+
+// Note: Bot configurations are saved/updated via the main dev.flossly.ai API
+// This VPS deployment only serves configs for script shortening with caching
+
+// Flossly API Appointment Endpoint
+// This endpoint handles appointment creation in Flossly API
+app.post('/api/flossly/appointment', async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    const { botId, patient, appointment } = req.body;
+    
+    // Validate required fields according to new API structure
+    if (!botId) {
+      return res.status(400).json({
+        success: false,
+        error: 'botId is required',
+        statusCode: 400
+      });
+    }
+    
+    if (!appointment || !appointment.date || !appointment.time) {
+      return res.status(400).json({
+        success: false,
+        error: 'date and time are required',
+        statusCode: 400
+      });
+    }
+    
+    console.log(`[${new Date().toISOString()}] Flossly API appointment request:`, {
+      botId,
+      patient: patient ? { firstName: patient.firstName, email: patient.email } : null,
+      appointment: { date: appointment.date, time: appointment.time, duration: appointment.duration }
+    });
+    
+    // Prepare appointment payload according to new API structure
+    // dentistId is automatically selected by the API, so we don't include it
+    const duration = appointment.duration || 30;
+    
+    // Build payload with required fields
+    const appointmentPayload = {
+      botId: botId,
+      date: appointment.date, // Format: YYYY-MM-DD
+      time: appointment.time, // Format: HH:MM
+      duration: duration // in minutes
+    };
+    
+    // Add optional fields if provided
+    if (patient) {
+      // Use patientId if provided, otherwise use patientName for auto-creation
+      if (patient.id || patient.patientId) {
+        appointmentPayload.patientId = patient.id || patient.patientId;
+      } else if (patient.firstName || patient.lastName) {
+        // Combine firstName and lastName into patientName (API will auto-create patient)
+        const firstName = patient.firstName || '';
+        const lastName = patient.lastName || '';
+        const fullName = `${firstName} ${lastName}`.trim();
+        if (fullName) {
+          appointmentPayload.patientName = fullName;
+        }
+      }
+    }
+    
+    // Add optional appointment fields
+    if (appointment.treatmentId) {
+      appointmentPayload.treatmentId = appointment.treatmentId;
+    }
+    
+    if (appointment.treatmentName) {
+      appointmentPayload.treatmentName = appointment.treatmentName;
+    } else if (!appointment.treatmentId) {
+      // Default treatment name if no treatment specified
+      appointmentPayload.treatmentName = 'Checkup';
+    }
+    
+    if (appointment.amount !== undefined) {
+      appointmentPayload.amount = appointment.amount;
+    }
+    
+    if (appointment.status) {
+      appointmentPayload.status = appointment.status;
+    }
+    
+    if (appointment.notes) {
+      appointmentPayload.notes = appointment.notes;
+    } else {
+      appointmentPayload.notes = 'Appointment booked via chatbot';
+    }
+    
+    try {
+      // Call the new chatbot appointment API endpoint
+      const appointmentResponse = await axios.post(`${FLOSSLY_API_BASE}/api/chatbot/createAppointment`, appointmentPayload, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+      
+      const responseTime = Date.now() - startTime;
+      
+      // Log the actual response structure for debugging
+      console.log('Flossly API response structure:', {
+        code: appointmentResponse.data.code,
+        success: appointmentResponse.data.success,
+        hasData: !!appointmentResponse.data.data,
+        keys: Object.keys(appointmentResponse.data)
+      });
+      
+      // New API structure: code === 1 means success, code === 0 means error
+      // Check if code === 1 OR (success === true), be lenient with response structure
+      if (appointmentResponse.data.code === 1 || appointmentResponse.data.success === true) {
+        console.log(`Appointment created successfully:`, appointmentResponse.data.data);
+        
+        return res.json({
+          success: true,
+          message: 'Appointment created successfully',
+          data: appointmentResponse.data.data || appointmentResponse.data,
+          responseTime: `${responseTime}ms`,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        // Handle error response from API (code === 0 or code !== 1)
+        console.log('API returned error structure:', appointmentResponse.data);
+        const errorMessage = appointmentResponse.data.error || appointmentResponse.data.message || 'Failed to create appointment';
+        throw new Error(errorMessage);
+      }
+      
+    } catch (apiError) {
+      console.error('Flossly API error:', apiError.response?.data || apiError.message);
+      
+      const responseTime = Date.now() - startTime;
+      const statusCode = apiError.response?.status || 500;
+      const errorData = apiError.response?.data || {};
+      
+      // Handle 409 conflict
+      // Extract error message from various possible locations in the response
+      // New API structure uses: { code: 0, error: "error message" }
+      let errorMessage = '';
+      if (typeof errorData.error === 'string') {
+        errorMessage = errorData.error;
+      } else if (typeof errorData.message === 'string' && errorData.message) {
+        errorMessage = errorData.message;
+      } else if (errorData.data && typeof errorData.data.message === 'string') {
+        errorMessage = errorData.data.message;
+      } else if (typeof errorData.error === 'object' && errorData.error !== null) {
+        errorMessage = JSON.stringify(errorData.error);
+      }
+      
+      // Check for conflict errors (409 status or specific error messages)
+      const isConflict = statusCode === 409 || 
+                        (errorMessage && (
+                          errorMessage.includes('already has an appointment') ||
+                          errorMessage.includes('Time slot') ||
+                          errorMessage.includes('occupied')
+                        ));
+      
+      if (isConflict) {
+        return res.status(409).json({
+          success: false,
+          conflict: true,
+          error: errorMessage || 'Time slot already booked',
+          message: 'This time slot is already booked. Please select a different time.',
+          statusCode: 409,
+          responseTime: `${responseTime}ms`,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      // Format error message for response
+      const finalErrorMessage = errorMessage || apiError.message || 'Failed to create appointment';
+      
+      return res.status(statusCode).json({
+        success: false,
+        error: finalErrorMessage,
+        statusCode: statusCode,
+        responseTime: `${responseTime}ms`,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+  } catch (error) {
+    console.error('Flossly appointment endpoint error:', error);
+    const responseTime = Date.now() - startTime;
+    
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message,
+      responseTime: `${responseTime}ms`,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Flossly API Lead Endpoint
+// This endpoint handles lead creation in Flossly API (for treatment enquiries/brochure requests)
+app.post('/api/flossly/lead', async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    const { botId, customer, treatment, company } = req.body;
+    
+    if (!botId || !customer) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: botId or customer'
+      });
+    }
+    
+    console.log(`[${new Date().toISOString()}] Flossly API lead request:`, {
+      botId,
+      customer: { name: customer.name, email: customer.email },
+      treatment: treatment?.name || 'N/A'
+    });
+    
+    // Validate required fields for lead creation
+    if (!customer.email || !customer.name) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required customer fields: email and name are required',
+        statusCode: 400
+      });
+    }
+    
+    try {
+      // Prepare lead payload for public API endpoint
+      const leadPayload = {
+        botId: botId,
+        name: customer.name,
+        email: customer.email,
+        telephone: customer.phone || '',
+        leadSource: 'Chatbot',
+        leadStatus: 'New'
+      };
+      
+      // Add optional fields if available
+      if (treatment && treatment.name) {
+        leadPayload.treatment = treatment.name;
+        if (treatment.description) {
+          leadPayload.comments = `Treatment enquiry: ${treatment.name}. ${treatment.description}`;
+        } else {
+          leadPayload.comments = `Treatment enquiry: ${treatment.name}`;
+        }
+      }
+      
+      if (company && company.name) {
+        leadPayload.comments = (leadPayload.comments || '') + ` | Company: ${company.name}`;
+      }
+      
+      const leadResponse = await axios.post(`${FLOSSLY_API_BASE}/api/chatbot/createLead`, leadPayload, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+      
+      const responseTime = Date.now() - startTime;
+      
+      if (leadResponse.data.code === 0 || leadResponse.data.success) {
+        console.log(`Lead created successfully:`, leadResponse.data.data);
+        
+        return res.json({
+          success: true,
+          message: 'Lead created successfully',
+          data: leadResponse.data.data,
+          responseTime: `${responseTime}ms`,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        throw new Error(leadResponse.data.message || 'Failed to create lead');
+      }
+      
+    } catch (apiError) {
+      console.error('Flossly API error:', apiError.response?.data || apiError.message);
+      
+      const responseTime = Date.now() - startTime;
+      const statusCode = apiError.response?.status || 500;
+      const errorData = apiError.response?.data || {};
+      
+      // Extract error message from various possible locations in the response
+      let errorMessage = '';
+      if (typeof errorData.error === 'string') {
+        errorMessage = errorData.error;
+      } else if (typeof errorData.message === 'string' && errorData.message) {
+        errorMessage = errorData.message;
+      } else if (errorData.data && typeof errorData.data.message === 'string') {
+        errorMessage = errorData.data.message;
+      } else if (typeof errorData.error === 'object' && errorData.error !== null) {
+        errorMessage = JSON.stringify(errorData.error);
+      }
+      
+      // Format error message for response
+      const finalErrorMessage = errorMessage || apiError.message || 'Failed to create lead';
+      
+      return res.status(statusCode).json({
+        success: false,
+        error: finalErrorMessage,
+        statusCode: statusCode,
+        responseTime: `${responseTime}ms`,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+  } catch (error) {
+    console.error('Flossly lead endpoint error:', error);
+    const responseTime = Date.now() - startTime;
+    
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message,
+      responseTime: `${responseTime}ms`,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Save bot config to VPS cache (called from Bot Builder after saving to main API)
+app.post('/api/bot-config/:botId', (req, res) => {
+  const { botId } = req.params;
+  const config = req.body;
+  
+  if (!config) {
+    return res.status(400).json({
+      success: false,
+      error: 'Bot configuration is required'
+    });
+  }
+  
+  try {
+    const data = readData();
+    if (!data.bot_configs) {
+      data.bot_configs = {};
+    }
+    
+    // Save config to VPS cache
+    data.bot_configs[botId] = {
+      ...config,
+      cachedAt: new Date().toISOString()
+    };
+    
+    writeData(data);
+    
+    console.log(`Bot config saved to VPS cache for botId: ${botId}`);
+    
+    res.json({
+      success: true,
+      message: 'Bot configuration saved to VPS cache successfully',
+      botId: botId
+    });
+  } catch (error) {
+    console.error('Error saving bot config to VPS:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to save bot configuration to VPS cache'
+    });
+  }
+});
+
+// Store access token for botId (called from Bot Builder when saving bot config)
+app.post('/api/bot-token/:botId', (req, res) => {
+  const { botId } = req.params;
+  const { accessToken, dentistId } = req.body;
+  
+  if (!accessToken) {
+    return res.status(400).json({
+      success: false,
+      error: 'Access token is required'
+    });
+  }
+  
+  try {
+    const data = readData();
+    if (!data.bot_tokens) {
+      data.bot_tokens = {};
+    }
+    
+    data.bot_tokens[botId] = {
+      accessToken: accessToken,
+      dentistId: dentistId || null,
+      storedAt: new Date().toISOString()
+    };
+    
+    // Also store in bot_configs if it exists
+    if (data.bot_configs[botId]) {
+      data.bot_configs[botId].accessToken = accessToken;
+      if (dentistId) {
+        data.bot_configs[botId].dentistId = dentistId;
+      }
+    }
+    
+    writeData(data);
+    
+    console.log(`Access token stored for botId: ${botId}`);
+    
+    res.json({
+      success: true,
+      message: 'Access token stored successfully',
+      botId: botId
+    });
+  } catch (error) {
+    console.error('Error storing access token:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to store access token'
+    });
+  }
+});
+
+
+// No encryption for now - store tokens as plain text
+
+// Google OAuth endpoints
+app.get('/oauth2/authorize/:clientId', (req, res) => {
+  const { clientId } = req.params;
+  
+  const authUrl = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: ['https://www.googleapis.com/auth/calendar.events'],
+    prompt: 'consent',
+    state: clientId // Pass client ID in state for callback
+  });
+  
+  res.json({ authUrl });
+});
+
+app.get('/oauth2/callback', async (req, res) => {
+  console.log('=== OAUTH CALLBACK HIT ===');
+  console.log('Timestamp:', new Date().toISOString());
+  console.log('Query params:', req.query);
+  console.log('Headers:', req.headers);
+  
+  const { code, state } = req.query;
+  const clientId = state;
+  
+  console.log('OAuth callback received:', { code: code ? 'present' : 'missing', state, clientId });
+  console.log('Full request URL:', req.url);
+  
+  if (!code || !clientId) {
+    console.error('Missing authorization code or client ID:', { code: !!code, clientId: !!clientId });
+    return res.status(400).json({ error: 'Missing authorization code or client ID' });
+  }
+  
+  try {
+    console.log('Attempting to exchange authorization code for tokens...');
+    const { tokens } = await oauth2Client.getToken(code);
+    console.log('Tokens received successfully:', { 
+      hasAccessToken: !!tokens.access_token, 
+      hasRefreshToken: !!tokens.refresh_token,
+      expiresIn: tokens.expiry_date 
+    });
+    
+    // Store tokens in JSON file (no encryption for now)
+    console.log('Storing tokens in JSON file for clientId:', clientId);
+    const data = readData();
+    console.log('Current data before storing:', JSON.stringify(data, null, 2));
+    
+    data.google_tokens[clientId] = {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expiry_date: tokens.expiry_date,
+      scope: tokens.scope,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    console.log('Data after adding tokens:', JSON.stringify(data, null, 2));
+    
+    if (writeData(data)) {
+      console.log('Tokens stored successfully for clientId:', clientId);
+      console.log('Final data file contents:', JSON.stringify(readData(), null, 2));
+      
+      // Send HTML response that communicates with parent window
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Google Calendar Connected</title>
+          <style>
+            body { 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              height: 100vh;
+              margin: 0;
+              background: #f5f5f5;
+            }
+            .container {
+              text-align: center;
+              background: white;
+              padding: 40px;
+              border-radius: 12px;
+              box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }
+            .success { color: #10b981; font-size: 48px; margin-bottom: 20px; }
+            .message { color: #374151; font-size: 18px; margin-bottom: 10px; }
+            .subtitle { color: #6b7280; font-size: 14px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="success">✅</div>
+            <div class="message">Google Calendar Connected Successfully!</div>
+            <div class="subtitle">You can close this window and return to your bot builder.</div>
+          </div>
+          <script>
+            // Notify parent window of success
+            if (window.opener) {
+              window.opener.postMessage({
+                type: 'GOOGLE_OAUTH_SUCCESS',
+                clientId: '${clientId}'
+              }, '*');
+            }
+            
+            // Auto-close after 2 seconds
+            setTimeout(() => {
+              window.close();
+            }, 2000);
+          </script>
+        </body>
+        </html>
+      `);
+    } else {
+      console.error('Failed to write data to file');
+      res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Error</title>
+          <style>
+            body { 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              height: 100vh;
+              margin: 0;
+              background: #f5f5f5;
+            }
+            .container {
+              text-align: center;
+              background: white;
+              padding: 40px;
+              border-radius: 12px;
+              box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }
+            .error { color: #ef4444; font-size: 48px; margin-bottom: 20px; }
+            .message { color: #374151; font-size: 18px; margin-bottom: 10px; }
+            .subtitle { color: #6b7280; font-size: 14px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="error">❌</div>
+            <div class="message">Failed to store tokens</div>
+            <div class="subtitle">Please try again.</div>
+          </div>
+          <script>
+            // Notify parent window of error
+            if (window.opener) {
+              window.opener.postMessage({
+                type: 'GOOGLE_OAUTH_ERROR',
+                error: 'Failed to store tokens'
+              }, '*');
+            }
+            
+            // Auto-close after 3 seconds
+            setTimeout(() => {
+              window.close();
+            }, 3000);
+          </script>
+        </body>
+        </html>
+      `);
+    }
+    
+  } catch (error) {
+    console.error('OAuth error details:', {
+      message: error.message,
+      code: error.code,
+      status: error.status,
+      response: error.response?.data
+    });
+    res.status(500).json({ 
+      error: 'Failed to exchange authorization code',
+      details: error.message 
+    });
+  }
+});
+
+// Disconnect Google Calendar
+app.delete('/api/calendar/disconnect/:clientId', (req, res) => {
+  const { clientId } = req.params;
+  
+  try {
+    const data = readData();
+    if (data.google_tokens[clientId]) {
+      delete data.google_tokens[clientId];
+      if (writeData(data)) {
+        console.log('Google Calendar disconnected for clientId:', clientId);
+        res.json({ success: true, message: 'Google Calendar disconnected successfully' });
+      } else {
+        res.status(500).json({ error: 'Failed to save changes' });
+      }
+    } else {
+      res.status(404).json({ error: 'No Google Calendar connection found' });
+    }
+  } catch (error) {
+    console.error('Error disconnecting Google Calendar:', error);
+    res.status(500).json({ error: 'Failed to disconnect Google Calendar' });
+  }
+});
+
+// Check Google Calendar connection status
+app.get('/api/calendar/status/:clientId', (req, res) => {
+  const { clientId } = req.params;
+  
+  try {
+    const data = readData();
+    const tokenData = data.google_tokens[clientId];
+    
+    if (!tokenData) {
+      return res.json({ connected: false });
+    }
+    
+    // Check if token is expired
+    const now = Date.now();
+    const isExpired = tokenData.expiry_date && now >= tokenData.expiry_date;
+    
+    res.json({
+      connected: true,
+      expired: isExpired,
+      scope: tokenData.scope,
+      connectedAt: tokenData.created_at
+    });
+  } catch (error) {
+    console.error('Error checking calendar status:', error);
+    res.status(500).json({ error: 'Failed to check calendar status' });
+  }
+});
+
+// Refresh Google Calendar token
+app.post('/api/calendar/refresh/:clientId', async (req, res) => {
+  const { clientId } = req.params;
+  
+  db.get(
+    'SELECT * FROM google_tokens WHERE client_id = ?',
+    [clientId],
+    async (err, row) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      if (!row) {
+        return res.status(404).json({ error: 'No tokens found for client' });
+      }
+      
+      try {
+        const refreshToken = decrypt(row.refresh_token);
+        oauth2Client.setCredentials({ refresh_token: refreshToken });
+        
+        const { credentials } = await oauth2Client.refreshAccessToken();
+        
+        // Update tokens in database
+        const encryptedAccessToken = encrypt(credentials.access_token);
+        const encryptedRefreshToken = credentials.refresh_token ? 
+          encrypt(credentials.refresh_token) : row.refresh_token;
+        
+        db.run(
+          `UPDATE google_tokens 
+           SET access_token = ?, refresh_token = ?, expiry_date = ?, updated_at = CURRENT_TIMESTAMP 
+           WHERE client_id = ?`,
+          [encryptedAccessToken, encryptedRefreshToken, credentials.expiry_date, clientId],
+          function(err) {
+            if (err) {
+              return res.status(500).json({ error: 'Failed to update tokens' });
+            }
+            
+            res.json({ success: true, message: 'Token refreshed successfully' });
+          }
+        );
+        
+      } catch (error) {
+        console.error('Token refresh error:', error);
+        res.status(500).json({ error: 'Failed to refresh token' });
+      }
+    }
+  );
+});
+
+// Create Google Calendar event
+app.post('/api/calendar/create-event/:clientId', async (req, res) => {
+  const { clientId } = req.params;
+  const { customerName, customerEmail, customerPhone, appointmentDate, appointmentTime, duration = 60, userTimezone = 'UTC' } = req.body;
+  
+  if (!customerName || !customerEmail || !appointmentDate || !appointmentTime) {
+    return res.status(400).json({ error: 'Missing required appointment details' });
+  }
+  
+  try {
+    const data = readData();
+    const tokenData = data.google_tokens[clientId];
+    
+    if (!tokenData) {
+      return res.status(404).json({ error: 'Google Calendar not connected' });
+    }
+    
+    // Set up OAuth2 client
+    oauth2Client.setCredentials({
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token
+    });
+    
+    // Create calendar service
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+    
+    // Parse appointment date and time in user's timezone
+    // Create the datetime string in the user's timezone format
+    const startDateTimeStr = `${appointmentDate}T${appointmentTime}:00`;
+    const endDateTimeStr = `${appointmentDate}T${String(parseInt(appointmentTime.split(':')[0]) + Math.floor(duration / 60)).padStart(2, '0')}:${String((parseInt(appointmentTime.split(':')[1]) + (duration % 60)) % 60).padStart(2, '0')}:00`;
+    
+    console.log('Creating event with:', {
+      userTimezone,
+      startDateTimeStr,
+      endDateTimeStr,
+      duration
+    });
+    
+    // Create event in user's timezone
+    const event = {
+      summary: `Appointment - ${customerName}`,
+      description: `Appointment booked via chatbot\n\nCustomer: ${customerName}\nEmail: ${customerEmail}\nPhone: ${customerPhone}`,
+      start: {
+        dateTime: startDateTimeStr,
+        timeZone: userTimezone,
+      },
+      end: {
+        dateTime: endDateTimeStr,
+        timeZone: userTimezone,
+      },
+      attendees: [
+        { email: customerEmail, displayName: customerName }
+      ],
+      reminders: {
+        useDefault: false,
+        overrides: [
+          { method: 'email', minutes: 24 * 60 }, // 1 day before
+          { method: 'popup', minutes: 30 }, // 30 minutes before
+        ],
+      },
+    };
+    
+    const response = await calendar.events.insert({
+      calendarId: 'primary',
+      resource: event,
+    });
+    
+    res.json({
+      success: true,
+      message: 'Appointment created successfully',
+      eventId: response.data.id,
+      eventLink: response.data.htmlLink
+    });
+    
+  } catch (error) {
+    console.error('Calendar API error:', error);
+    
+    // If token is expired, try to refresh
+    if (error.code === 401) {
+      try {
+        const data = readData();
+        const tokenData = data.google_tokens[clientId];
+        
+        if (!tokenData || !tokenData.refresh_token) {
+          return res.status(401).json({ error: 'Google Calendar authentication expired. Please reconnect.' });
+        }
+        
+        oauth2Client.setCredentials({ refresh_token: tokenData.refresh_token });
+        const { credentials } = await oauth2Client.refreshAccessToken();
+        
+        // Update tokens in data
+        data.google_tokens[clientId] = {
+          ...tokenData,
+          access_token: credentials.access_token,
+          updated_at: new Date().toISOString()
+        };
+        writeData(data);
+        
+        // Retry the calendar event creation
+        oauth2Client.setCredentials({ access_token: credentials.access_token });
+        const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+        
+        // Create the datetime string in the user's timezone format
+        const startDateTimeStr = `${appointmentDate}T${appointmentTime}:00`;
+        const endDateTimeStr = `${appointmentDate}T${String(parseInt(appointmentTime.split(':')[0]) + Math.floor(duration / 60)).padStart(2, '0')}:${String((parseInt(appointmentTime.split(':')[1]) + (duration % 60)) % 60).padStart(2, '0')}:00`;
+        
+        const event = {
+          summary: `Appointment - ${customerName}`,
+          description: `Appointment booked via chatbot\n\nCustomer: ${customerName}\nEmail: ${customerEmail}\nPhone: ${customerPhone}`,
+          start: { 
+            dateTime: startDateTimeStr, 
+            timeZone: userTimezone
+          },
+          end: { 
+            dateTime: endDateTimeStr, 
+            timeZone: userTimezone
+          },
+          attendees: [{ email: customerEmail, displayName: customerName }],
+          reminders: { useDefault: false, overrides: [{ method: 'email', minutes: 24 * 60 }, { method: 'popup', minutes: 30 }] },
+        };
+        
+        const response = await calendar.events.insert({
+          calendarId: 'primary',
+          resource: event,
+        });
+        
+        res.json({
+          success: true,
+          message: 'Appointment created successfully (after token refresh)',
+          eventId: response.data.id,
+          eventLink: response.data.htmlLink
+        });
+        
+      } catch (refreshError) {
+        console.error('Token refresh failed:', refreshError);
+        res.status(401).json({ error: 'Google Calendar authentication expired. Please reconnect.' });
+      }
+    } else {
+      res.status(500).json({ error: 'Failed to create calendar event' });
+    }
+  }
+});
+
+// Check Google Calendar availability
+app.get('/api/calendar/availability/:clientId', async (req, res) => {
+  const { clientId } = req.params;
+  const { date, duration = 60, userTimezone = 'UTC' } = req.query;
+  
+  try {
+    const data = readData();
+    const tokenData = data.google_tokens[clientId];
+    
+    if (!tokenData) {
+      return res.status(404).json({ error: 'Google Calendar not connected' });
+    }
+    
+    // Set up OAuth2 client
+    oauth2Client.setCredentials({
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token
+    });
+    
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+    
+    // Get start and end of day in UTC to avoid timezone issues
+    const startOfDay = new Date(date + 'T00:00:00.000Z');
+    const endOfDay = new Date(date + 'T23:59:59.999Z');
+    
+    // Fetch existing events for the day
+    const response = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin: startOfDay.toISOString(),
+      timeMax: endOfDay.toISOString(),
+      singleEvents: true,
+      orderBy: 'startTime'
+    });
+    
+    const events = response.data.items || [];
+    
+    // Generate available time slots (9 AM to 5 PM, 30-minute intervals)
+    // Use the user's timezone for slot generation
+    console.log('Availability check debug:', {
+      date,
+      userTimezone,
+      eventsCount: events.length,
+      existingEvents: events.map(e => ({
+        start: e.start.dateTime || e.start.date,
+        end: e.end.dateTime || e.end.date,
+        summary: e.summary
+      }))
+    });
+    
+    const availableSlots = generateAvailableSlots(date, events, parseInt(duration), userTimezone);
+    
+    res.json({
+      success: true,
+      date: date,
+      availableSlots: availableSlots,
+      existingEvents: events.map(event => ({
+        start: event.start.dateTime || event.start.date,
+        end: event.end.dateTime || event.end.date,
+        summary: event.summary
+      }))
+    });
+    
+  } catch (error) {
+    console.error('Availability check error:', error);
+    res.status(500).json({ error: 'Failed to check availability' });
+  }
+});
+
+// Get smart appointment suggestions
+app.post('/api/calendar/suggestions/:clientId', async (req, res) => {
+  const { clientId } = req.params;
+  const { preferredDate, preferredTime, duration = 60, userTimezone = 'UTC' } = req.body;
+  
+  try {
+    const data = readData();
+    const tokenData = data.google_tokens[clientId];
+    
+    if (!tokenData) {
+      return res.status(404).json({ error: 'Google Calendar not connected' });
+    }
+    
+    // Check availability for the preferred date
+    const availabilityResponse = await axios.get(`http://localhost:${PORT}/api/calendar/availability/${clientId}`, {
+      params: { date: preferredDate, duration, userTimezone }
+    });
+    
+    const { availableSlots, existingEvents } = availabilityResponse.data;
+    
+    // Check if preferred time is available
+    const preferredDateTime = new Date(`${preferredDate}T${preferredTime}`);
+    const isPreferredTimeAvailable = availableSlots.some(slot => {
+      const slotTime = new Date(`${preferredDate}T${slot.time}`);
+      return Math.abs(slotTime.getTime() - preferredDateTime.getTime()) < 30 * 60 * 1000; // 30 minutes tolerance
+    });
+    
+    // Generate smart suggestions
+    const suggestions = generateSmartSuggestions(preferredDate, preferredTime, availableSlots, existingEvents);
+    
+    res.json({
+      success: true,
+      preferredTimeAvailable: isPreferredTimeAvailable,
+      suggestions: suggestions,
+      availableSlots: availableSlots.slice(0, 10) // Limit to first 10 slots
+    });
+    
+  } catch (error) {
+    console.error('Suggestions error:', error);
+    res.status(500).json({ error: 'Failed to generate suggestions' });
+  }
+});
+
+// Gmail Brochure webhook endpoint
+app.post('/webhook/gmail-brochure', async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    const { botId, type, treatment, customer, company } = req.body;
+    
+    console.log(`[${new Date().toISOString()}] Gmail Brochure webhook:`, {
+      botId,
+      type,
+      treatment: treatment?.name,
+      customer: customer?.email,
+      company: company?.name,
+      ip: req.ip
+    });
+    
+    // Forward to n8n Gmail workflow
+    try {
+      const n8nResponse = await axios.post('https://n8n.flossly.ai/webhook/gmail-brochure', req.body, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+      
+      const responseTime = Date.now() - startTime;
+      
+      res.json({
+        success: true,
+        message: 'Brochure request processed successfully',
+        n8nResponse: n8nResponse.data,
+        responseTime: `${responseTime}ms`,
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (n8nError) {
+      console.error('n8n Gmail Brochure webhook error:', n8nError.response?.data || n8nError.message);
+      
+      const responseTime = Date.now() - startTime;
+      
+      res.json({
+        success: false,
+        message: 'Brochure request received but email service is temporarily unavailable',
+        error: n8nError.response?.data?.error || 'n8n service unavailable',
+        responseTime: `${responseTime}ms`,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+  } catch (error) {
+    console.error('Gmail Brochure webhook error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Gmail Callback webhook endpoint
+app.post('/webhook/gmail-callback', async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    const { botId, type, customer, callback, company } = req.body;
+    
+    console.log(`[${new Date().toISOString()}] Gmail Callback webhook:`, {
+      botId,
+      type,
+      customer: customer?.name,
+      callback: callback?.reason,
+      company: company?.name,
+      ip: req.ip
+    });
+    
+    // Forward to n8n Gmail workflow
+    try {
+      const n8nResponse = await axios.post('https://n8n.flossly.ai/webhook/gmail-callback', req.body, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+      
+      const responseTime = Date.now() - startTime;
+      
+      res.json({
+        success: true,
+        message: 'Callback request processed successfully',
+        n8nResponse: n8nResponse.data,
+        responseTime: `${responseTime}ms`,
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (n8nError) {
+      console.error('n8n Gmail Callback webhook error:', n8nError.response?.data || n8nError.message);
+      
+      const responseTime = Date.now() - startTime;
+      
+      res.json({
+        success: false,
+        message: 'Callback request received but email service is temporarily unavailable',
+        error: n8nError.response?.data?.error || 'n8n service unavailable',
+        responseTime: `${responseTime}ms`,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+  } catch (error) {
+    console.error('Gmail Callback webhook error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Webhook endpoint for appointment bookings
+app.post('/webhook/appointment-booking', async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    const { botId, type, formData, timestamp } = req.body;
+    
+    // Log for debugging
+    console.log(`[${new Date().toISOString()}] Appointment webhook:`, {
+      botId,
+      type,
+      formData: formData ? Object.keys(formData) : 'none',
+      ip: req.ip
+    });
+    
+    // If it's an appointment booking with form data
+    if (type === 'appointment_booking' && formData && formData.fullName && formData.contact && formData.preferredDate && formData.preferredTime) {
+      // Google Calendar integration is optional - try to create event but don't fail if not connected
+      let googleEventId = null;
+      
+      try {
+        const userTimezone = req.body.userTimezone || 'UTC';
+        
+        // Try to create Google Calendar event (optional)
+        const calendarResponse = await axios.post(`http://localhost:${PORT}/api/calendar/create-event/${botId}`, {
+          customerName: formData.fullName,
+          customerEmail: formData.contact,
+          customerPhone: formData.phone || '',
+          appointmentDate: formData.preferredDate,
+          appointmentTime: formData.preferredTime,
+          duration: 60,
+          userTimezone: userTimezone
+        }, {
+          timeout: 5000 // 5 second timeout
+        });
+        
+        googleEventId = calendarResponse.data?.eventId || null;
+        console.log('Google Calendar event created for botId:', botId);
+        
+      } catch (calendarError) {
+        const calendarStatusCode = calendarError.response?.status;
+        const calendarErrorData = calendarError.response?.data || {};
+        
+        // Google Calendar is optional - only log if it's not a "not connected" error
+        if (calendarStatusCode === 404 || calendarErrorData.error === 'Google Calendar not connected') {
+          console.log('Google Calendar not connected for botId:', botId, '- This is expected if calendar is not set up');
+        } else {
+          // Log other errors but don't fail the request
+          console.log('Google Calendar event creation failed (non-blocking):', calendarErrorData?.error || calendarError.message);
+        }
+      }
+      
+      // Store appointment in local data (check for duplicates first)
+      const data = readData();
+      
+      // Check if appointment already exists for this time slot
+      const existingAppointment = data.appointments.find(apt => 
+        apt.botId === botId && 
+        apt.appointmentDate === formData.preferredDate && 
+        apt.appointmentTime === formData.preferredTime &&
+        apt.customerEmail === formData.contact
+      );
+      
+      if (existingAppointment) {
+        console.log('Appointment already exists, skipping duplicate creation');
+        const responseTime = Date.now() - startTime;
+        
+        return res.json({
+          success: true,
+          message: 'Appointment already exists!',
+          appointmentId: existingAppointment.id,
+          calendarEvent: googleEventId ? { eventId: googleEventId } : null,
+          responseTime: `${responseTime}ms`,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const appointmentId = `apt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      data.appointments.push({
+        id: appointmentId,
+        botId: botId,
+        customerName: formData.fullName,
+        customerEmail: formData.contact,
+        customerPhone: formData.phone || '',
+        appointmentDate: formData.preferredDate,
+        appointmentTime: formData.preferredTime,
+        status: 'confirmed',
+        googleEventId: googleEventId,
+        createdAt: new Date().toISOString()
+      });
+      
+      writeData(data);
+      
+      const responseTime = Date.now() - startTime;
+      
+      res.json({
+        success: true,
+        message: 'Appointment booked successfully! You will receive a confirmation email shortly.',
+        appointmentId: appointmentId,
+        calendarEvent: googleEventId ? { eventId: googleEventId } : null,
+        responseTime: `${responseTime}ms`,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      // For non-appointment requests or incomplete data
+      const responseTime = Date.now() - startTime;
+      
+      res.json({
+        success: true,
+        message: 'Request received',
+        botId: botId,
+        responseTime: `${responseTime}ms`,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// ============================================
+// AI AGENT ENDPOINTS
+// ============================================
+
+/**
+ * AI Chat Endpoint
+ * Handles conversational AI with web browsing and tool calling
+ */
+app.post('/api/ai/chat', async (req, res) => {
+  try {
+    const { botId, message, conversationHistory = [] } = req.body;
+    
+    // Validate input
+    if (!botId || !message) {
+      return res.status(400).json({
+        success: false,
+        error: 'botId and message are required'
+      });
+    }
+    
+    console.log(`[AI Chat] Bot ${botId}: "${message.substring(0, 50)}..."`);
+    
+    // Call AI agent
+    const startTime = Date.now();
+    const response = await chatWithAgent(botId, message, conversationHistory);
+    const responseTime = Date.now() - startTime;
+    
+    console.log(`[AI Chat] Response time: ${responseTime}ms`);
+    
+    res.json({
+      ...response,
+      responseTime: `${responseTime}ms`,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('[AI Chat] Error:', error);
+    res.status(500).json({
+      success: false,
+      content: "I apologize, but I'm having trouble right now. Please try again or contact us directly.",
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * AI Chat Streaming Endpoint (Optional - for future use)
+ * Enables streaming responses for better UX
+ */
+app.post('/api/ai/chat/stream', async (req, res) => {
+  try {
+    const { botId, message, conversationHistory = [] } = req.body;
+    
+    if (!botId || !message) {
+      return res.status(400).json({
+        success: false,
+        error: 'botId and message are required'
+      });
+    }
+    
+    // Set up SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    
+    // For now, just return the regular response
+    // TODO: Implement streaming with OpenAI streaming API
+    const response = await chatWithAgent(botId, message, conversationHistory);
+    
+    res.write(`data: ${JSON.stringify(response)}\n\n`);
+    res.end();
+    
+  } catch (error) {
+    console.error('[AI Chat Stream] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Get AI Configuration for a bot
+ */
+app.get('/api/ai/config/:botId', async (req, res) => {
+  try {
+    const { botId } = req.params;
+    
+    const data = readData();
+    const aiConfig = data.ai_configs?.[botId];
+    
+    if (!aiConfig) {
+      return res.status(404).json({
+        success: false,
+        error: 'AI configuration not found for this bot'
+      });
+    }
+    
+    res.json({
+      success: true,
+      config: aiConfig
+    });
+    
+  } catch (error) {
+    console.error('[AI Config] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Update AI Configuration for a bot
+ */
+app.put('/api/ai/config/:botId', async (req, res) => {
+  try {
+    const { botId } = req.params;
+    const { aiMode, conversationStyle, model } = req.body;
+    
+    const data = readData();
+    
+    // Initialize ai_configs if it doesn't exist
+    if (!data.ai_configs) {
+      data.ai_configs = {};
+    }
+    
+    // Update or create AI config
+    data.ai_configs[botId] = {
+      ...data.ai_configs[botId],
+      aiMode: aiMode !== undefined ? aiMode : data.ai_configs[botId]?.aiMode || false,
+      conversationStyle: conversationStyle || data.ai_configs[botId]?.conversationStyle || 'friendly',
+      model: model || data.ai_configs[botId]?.model || 'gpt-4o-mini',
+      updatedAt: new Date().toISOString()
+    };
+    
+    writeData(data);
+    
+    res.json({
+      success: true,
+      config: data.ai_configs[botId]
+    });
+    
+  } catch (error) {
+    console.error('[AI Config Update] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Test website browsing capability
+ */
+app.post('/api/ai/test-browse', async (req, res) => {
+  try {
+    const { url } = req.body;
+    
+    if (!url) {
+      return res.status(400).json({
+        success: false,
+        error: 'url is required'
+      });
+    }
+    
+    const { browseWebsite } = require('./ai-tools');
+    const result = await browseWebsite(url);
+    
+    res.json({
+      success: true,
+      result: result,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('[Test Browse] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Test website search capability
+ */
+app.post('/api/ai/test-search', async (req, res) => {
+  try {
+    const { websiteUrl, query } = req.body;
+    
+    if (!websiteUrl || !query) {
+      return res.status(400).json({
+        success: false,
+        error: 'websiteUrl and query are required'
+      });
+    }
+    
+    const { searchPracticeWebsite } = require('./ai-tools');
+    const result = await searchPracticeWebsite(websiteUrl, query);
+    
+    res.json({
+      success: true,
+      result: result,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('[Test Search] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Metrics endpoint (for monitoring)
+app.get('/metrics', (req, res) => {
+  const memUsage = process.memoryUsage();
+  
+  res.json({
+    uptime: process.uptime(),
+    memory: {
+      rss: Math.round(memUsage.rss / 1024 / 1024), // MB
+      heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024), // MB
+      heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024), // MB
+    },
+    cpu: process.cpuUsage(),
+    timestamp: new Date().toISOString()
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  server.close(() => {
+    console.log('Process terminated');
+  });
+});
+
+const server = app.listen(PORT, () => {
+  console.log(`🚀 Flossy Widget Server running on port ${PORT}`);
+  console.log(`📦 Widget URL: http://localhost:${PORT}/widget.js`);
+  console.log(`🔗 Appointment Webhook: http://localhost:${PORT}/webhook/appointment-booking`);
+  console.log(`📧 Gmail Brochure Webhook: http://localhost:${PORT}/webhook/gmail-brochure`);
+  console.log(`📞 Gmail Callback Webhook: http://localhost:${PORT}/webhook/gmail-callback`);
+  console.log(`🤖 Bot Config API: http://localhost:${PORT}/api/bot-config/{botId}`);
+  console.log(`📊 Health Check: http://localhost:${PORT}/health`);
+  console.log(`📈 Metrics: http://localhost:${PORT}/metrics`);
+  
+  // Memory usage info
+  const memUsage = process.memoryUsage();
+  console.log(`💾 Initial Memory Usage: ${Math.round(memUsage.rss / 1024 / 1024)}MB`);
+});
+
+module.exports = app;
