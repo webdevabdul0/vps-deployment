@@ -11,9 +11,15 @@
     if (window.flossyWidgetLoaded) return;
     window.flossyWidgetLoaded = true;
     
-    // Get botId from embed script
+    // Get botId and optional API base from embed script
     const embedConfig = window.flossyConfig || {};
     const botId = embedConfig.botId;
+
+    // IMPORTANT: this widget can be embedded on *any* domain.
+    // Any relative fetch('/api/...') would go to the host website, not to the widget server.
+    // Therefore we always use an absolute API base.
+    // Override for staging/self-hosting via window.flossyConfig.apiBase.
+    const API_BASE = (embedConfig.apiBase || 'https://widget.flossly.ai').replace(/\/+$/, '');
     
     if (!botId) {
         console.error('Flossy Widget: botId is required');
@@ -83,7 +89,7 @@
             console.log(`Flossy Widget: Loading config for botId: ${botId}`);
             // Add cache-busting parameter to ensure fresh config
             const cacheBuster = `?t=${Date.now()}&v=${Math.random()}`;
-            const response = await fetch(`https://widget.flossly.ai/api/bot-config/${botId}${cacheBuster}`, {
+            const response = await fetch(`${API_BASE}/api/bot-config/${botId}${cacheBuster}`, {
                 method: 'GET',
                 headers: {
                     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -2026,7 +2032,7 @@
             // Get user's timezone (same as traditional flow)
             const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
             
-            const response = await fetch('/api/ai/chat', {
+            const response = await fetch(`${API_BASE}/api/ai/chat`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
