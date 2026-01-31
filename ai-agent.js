@@ -51,6 +51,7 @@ function actionToolsDisabledResult(actionName) {
 async function loadBotConfig(botId) {
   try {
     const dataPath = path.join(__dirname, 'flossy_data.json');
+    console.log('[AI Agent] loadBotConfig() reading:', dataPath);
     const data = await fs.readFile(dataPath, 'utf8');
     const flossyData = JSON.parse(data);
     
