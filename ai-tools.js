@@ -130,7 +130,7 @@ const tools = [
     type: "function",
     function: {
       name: "schedule_callback",
-      description: "Schedules a callback request. Use this when someone wants the practice to call them back.",
+      description: "Schedules a callback request. Use this when someone wants the practice to call them back. IMPORTANT: You MUST collect the email address - it is required for confirmation.",
       parameters: {
         type: "object",
         properties: {
@@ -144,7 +144,7 @@ const tools = [
           },
           email: {
             type: "string",
-            description: "Email address (optional)"
+            description: "Email address - REQUIRED for callback confirmation"
           },
           reason: {
             type: "string",
@@ -155,7 +155,7 @@ const tools = [
             description: "When they prefer to be called (e.g., 'Morning', 'After 3pm', 'Anytime')"
           }
         },
-        required: ["patientName", "phone", "reason"]
+        required: ["patientName", "phone", "email", "reason"]
       }
     }
   }

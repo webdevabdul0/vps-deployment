@@ -126,7 +126,10 @@ ${capabilities}
    - Wait for the tool result before confirming
 
 4. **Schedule Callbacks**: When someone wants to be called back:
-   - Collect: name, phone, reason, preferred time
+   - Collect: name, phone, email, reason, preferred time
+   - Email is REQUIRED for callback confirmation - always ask for it
+   - If the user message already contains all required fields, call "schedule_callback" immediately (do NOT re-ask)
+   - If any required field is missing, ask only for the missing field(s)
    - You MUST use the "schedule_callback" tool - this is required
    - NEVER say a callback is scheduled unless the tool returns success
    - Wait for the tool result before confirming
@@ -225,70 +228,129 @@ async function chatWithAgent(botId, userMessage, conversationHistory = [], userT
         
         let toolResult;
         const toolStartTime = Date.now();
+        let retryCount = 0;
+        const maxRetries = 1; // Allow 1 retry for action tools (appointment, lead, callback)
         
-        try {
-          switch (functionName) {
-            case 'browse_website':
-              // Validate URL before calling Firecrawl
-              if (!functionArgs.url || functionArgs.url === 'the website' || !functionArgs.url.startsWith('http')) {
+        // Determine if this tool should be retried on failure
+        const isActionTool = ['book_appointment', 'create_lead', 'schedule_callback'].includes(functionName);
+        
+        while (retryCount <= maxRetries) {
+          try {
+            switch (functionName) {
+              case 'browse_website':
+                // Validate URL before calling Firecrawl
+                if (!functionArgs.url || functionArgs.url === 'the website' || !functionArgs.url.startsWith('http')) {
+                  toolResult = {
+                    success: false,
+                    error: 'Website URL not configured for this practice',
+                    message: 'The website URL is not available. Please contact the office directly for information.'
+                  };
+                } else {
+                  toolResult = await browseWebsite(
+                    functionArgs.url,
+                    functionArgs.focus
+                  );
+                }
+                break;
+              
+              case 'search_practice_website':
+                // Validate website exists
+                if (!botConfig.companyWebsite || !botConfig.companyWebsite.startsWith('http')) {
+                  toolResult = {
+                    success: false,
+                    error: 'Website URL not configured for this practice',
+                    message: 'The website URL is not available. Please contact the office directly for information.'
+                  };
+                } else {
+                  toolResult = await searchPracticeWebsite(
+                    botConfig.companyWebsite,
+                    functionArgs.query
+                  );
+                }
+                break;
+              
+              case 'book_appointment':
+                toolResult = ACTION_TOOLS_DISABLED
+                  ? actionToolsDisabledResult('book_appointment')
+                  : await executeBookAppointment(botConfig, functionArgs);
+                break;
+              
+              case 'create_lead':
+                toolResult = ACTION_TOOLS_DISABLED
+                  ? actionToolsDisabledResult('create_lead')
+                  : await executeCreateLead(botConfig, functionArgs);
+                break;
+              
+              case 'schedule_callback':
+                toolResult = ACTION_TOOLS_DISABLED
+                  ? actionToolsDisabledResult('schedule_callback')
+                  : await executeScheduleCallback(botConfig, functionArgs);
+                break;
+              
+              default:
                 toolResult = {
                   success: false,
-                  error: 'Website URL not configured for this practice',
-                  message: 'The website URL is not available. Please contact the office directly for information.'
+                  error: `Unknown tool: ${functionName}`
                 };
+            }
+            
+            // If tool succeeded or it's not an action tool, break out of retry loop
+            if (toolResult.success || !isActionTool) {
+              break;
+            }
+            
+            // If tool failed and it's an action tool, check if we should retry
+            if (retryCount < maxRetries && toolResult.error) {
+              // Check if error is retryable (network errors, timeouts, etc.)
+              const isRetryableError = 
+                toolResult.error.includes('timeout') ||
+                toolResult.error.includes('ETIMEDOUT') ||
+                toolResult.error.includes('ECONNREFUSED') ||
+                toolResult.error.includes('network') ||
+                toolResult.error.includes('temporarily unavailable');
+              
+              if (isRetryableError) {
+                retryCount++;
+                console.log(`🔄 [AI Agent] Retrying ${functionName} (attempt ${retryCount + 1}/${maxRetries + 1}) after error: ${toolResult.error}`);
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+                continue;
               } else {
-                toolResult = await browseWebsite(
-                  functionArgs.url,
-                  functionArgs.focus
-                );
+                // Error is not retryable (validation error, missing fields, etc.)
+                break;
               }
+            } else {
+              // No more retries or validation error
               break;
+            }
             
-            case 'search_practice_website':
-              // Validate website exists
-              if (!botConfig.companyWebsite || !botConfig.companyWebsite.startsWith('http')) {
-                toolResult = {
-                  success: false,
-                  error: 'Website URL not configured for this practice',
-                  message: 'The website URL is not available. Please contact the office directly for information.'
-                };
-              } else {
-                toolResult = await searchPracticeWebsite(
-                  botConfig.companyWebsite,
-                  functionArgs.query
-                );
+          } catch (error) {
+            toolResult = {
+              success: false,
+              error: error.message
+            };
+            
+            // Check if we should retry
+            if (retryCount < maxRetries && isActionTool) {
+              const isRetryableError = 
+                error.code === 'ETIMEDOUT' ||
+                error.code === 'ECONNREFUSED' ||
+                error.message.includes('timeout') ||
+                error.message.includes('network');
+              
+              if (isRetryableError) {
+                retryCount++;
+                console.log(`🔄 [AI Agent] Retrying ${functionName} (attempt ${retryCount + 1}/${maxRetries + 1}) after exception: ${error.message}`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                continue;
               }
-              break;
-            
-            case 'book_appointment':
-              toolResult = ACTION_TOOLS_DISABLED
-                ? actionToolsDisabledResult('book_appointment')
-                : await executeBookAppointment(botConfig, functionArgs);
-              break;
-            
-            case 'create_lead':
-              toolResult = ACTION_TOOLS_DISABLED
-                ? actionToolsDisabledResult('create_lead')
-                : await executeCreateLead(botConfig, functionArgs);
-              break;
-            
-            case 'schedule_callback':
-              toolResult = ACTION_TOOLS_DISABLED
-                ? actionToolsDisabledResult('schedule_callback')
-                : await executeScheduleCallback(botConfig, functionArgs);
-              break;
-            
-            default:
-              toolResult = {
-                success: false,
-                error: `Unknown tool: ${functionName}`
-              };
+            }
+            break;
           }
-        } catch (error) {
-          toolResult = {
-            success: false,
-            error: error.message
-          };
+        }
+        
+        // Log if retry was used
+        if (retryCount > 0) {
+          console.log(`📊 [AI Agent] Tool ${functionName} completed after ${retryCount} ${retryCount === 1 ? 'retry' : 'retries'}. Final result: ${toolResult.success ? 'SUCCESS' : 'FAILED'}`);
         }
         
         const toolDuration = Date.now() - toolStartTime;
@@ -603,6 +665,25 @@ async function executeScheduleCallback(botConfig, callbackData) {
   try {
     console.log('\n📞 [CALLBACK SCHEDULING] Starting callback scheduling process...');
     console.log('📋 [CALLBACK SCHEDULING] Data received:', JSON.stringify(callbackData, null, 2));
+    
+    // Validate required fields - email is REQUIRED for n8n workflow
+    if (!callbackData.email || callbackData.email.trim() === '') {
+      console.log('❌ [CALLBACK SCHEDULING] VALIDATION FAILED - Email is required');
+      return {
+        success: false,
+        error: 'Email is required for callback confirmation',
+        message: 'I need your email address to send you a callback confirmation. Could you please provide your email?'
+      };
+    }
+    
+    if (!callbackData.patientName || !callbackData.phone) {
+      console.log('❌ [CALLBACK SCHEDULING] VALIDATION FAILED - Missing required fields');
+      return {
+        success: false,
+        error: 'Missing required fields',
+        message: 'I need your name and phone number to schedule a callback. Could you please provide them?'
+      };
+    }
     
     // Prepare callback data for n8n webhook
     const callbackPayload = {
