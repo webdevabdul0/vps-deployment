@@ -258,6 +258,140 @@ app.get('/health', (req, res) => {
   });
 });
 
+// ============================================================================
+// AUTH PROXY ENDPOINTS - Route to correct Flossly API based on token environment
+// ============================================================================
+
+// Exchange short token for access token
+app.post('/api/auth/exchangeShortToken', async (req, res) => {
+  try {
+    const { shortToken } = req.body;
+    
+    if (!shortToken) {
+      return res.status(400).json({
+        success: false,
+        code: -1,
+        message: 'Short token is required'
+      });
+    }
+    
+    // Decode token to determine environment (without verification)
+    let apiBase = 'https://dev.flossly.ai'; // Default
+    try {
+      const payload = JSON.parse(Buffer.from(shortToken.split('.')[1], 'base64').toString());
+      if (payload.environment === 'production') {
+        apiBase = 'https://app.flossly.ai';
+        console.log('🔵 [AUTH] Routing to PRODUCTION API:', apiBase);
+      } else {
+        console.log('🟢 [AUTH] Routing to DEV API:', apiBase);
+      }
+    } catch (decodeError) {
+      console.warn('[AUTH] Could not decode token environment, using dev.flossly.ai:', decodeError.message);
+    }
+    
+    const response = await axios.post(`${apiBase}/api/auth/exchangeShortToken`, {
+      shortToken
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+    
+    res.json(response.data);
+  } catch (error) {
+    console.error('[AUTH] Token exchange error:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      success: false,
+      message: error.response?.data?.message || 'Token exchange failed',
+      code: error.response?.data?.code || -1
+    });
+  }
+});
+
+// Get user profile
+app.get('/api/auth/profile', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        code: -1,
+        message: 'No authorization token provided'
+      });
+    }
+    
+    // Decode access token to determine environment (without verification)
+    let apiBase = 'https://dev.flossly.ai'; // Default
+    try {
+      const accessToken = authHeader.replace('Bearer ', '');
+      const payload = JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64').toString());
+      if (payload.environment === 'production') {
+        apiBase = 'https://app.flossly.ai';
+        console.log('🔵 [AUTH] Routing profile to PRODUCTION API:', apiBase);
+      } else {
+        console.log('🟢 [AUTH] Routing profile to DEV API:', apiBase);
+      }
+    } catch (decodeError) {
+      console.warn('[AUTH] Could not decode access token environment, using dev.flossly.ai:', decodeError.message);
+    }
+    
+    const response = await axios.get(`${apiBase}/api/auth/profile`, {
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+    
+    res.json(response.data);
+  } catch (error) {
+    console.error('[AUTH] Profile fetch error:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      success: false,
+      message: error.response?.data?.message || 'Failed to fetch profile',
+      code: error.response?.data?.code || -1
+    });
+  }
+});
+
+// ============================================================================
+// MIDDLEWARE: Determine API base URL from user's token environment
+// ============================================================================
+
+function getApiBaseFromToken(req) {
+  // Default to dev
+  let apiBase = 'https://dev.flossly.ai';
+  
+  // Try to get environment from Authorization header (for authenticated requests)
+  const authHeader = req.headers.authorization;
+  if (authHeader) {
+    try {
+      const accessToken = authHeader.replace('Bearer ', '');
+      const payload = JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64').toString());
+      
+      if (payload.environment === 'production') {
+        apiBase = 'https://app.flossly.ai';
+        console.log(`🔵 [API] Using PRODUCTION environment for ${req.method} ${req.url}`);
+      } else {
+        console.log(`🟢 [API] Using DEV environment for ${req.method} ${req.url}`);
+      }
+    } catch (error) {
+      console.warn('[API] Could not decode token environment, using dev.flossly.ai');
+    }
+  } else {
+    // No auth token - use environment variable or default
+    apiBase = process.env.FLOSSLY_API_BASE || 'https://dev.flossly.ai';
+  }
+  
+  return apiBase;
+}
+
+// ============================================================================
+// BOT CONFIGURATION ENDPOINTS
+// ============================================================================
+
 // Bot Configuration API Endpoints (for script shortening only)
 
 // Get bot configuration by botId (public endpoint for widget)
@@ -291,7 +425,8 @@ app.get('/api/bot-config/:botId', async (req, res) => {
       let response;
       try {
         // Try public endpoint if it exists
-        response = await axios.get(`${FLOSSLY_API_BASE}/chatbot/public/${botId}`, {
+        const apiBase = getApiBaseFromToken(req);
+        response = await axios.get(`${apiBase}/chatbot/public/${botId}`, {
         timeout: 10000
       });
       } catch (publicError) {
@@ -459,7 +594,8 @@ app.post('/api/flossly/appointment', async (req, res) => {
     
     try {
       // Call the new chatbot appointment API endpoint
-      const appointmentResponse = await axios.post(`${FLOSSLY_API_BASE}/api/chatbot/createAppointment`, appointmentPayload, {
+      const apiBase = getApiBaseFromToken(req);
+      const appointmentResponse = await axios.post(`${apiBase}/api/chatbot/createAppointment`, appointmentPayload, {
         headers: {
           'Content-Type': 'application/json'
         },
@@ -617,7 +753,8 @@ app.post('/api/flossly/lead', async (req, res) => {
         leadPayload.comments = (leadPayload.comments || '') + ` | Company: ${company.name}`;
       }
       
-      const leadResponse = await axios.post(`${FLOSSLY_API_BASE}/api/chatbot/createLead`, leadPayload, {
+      const apiBase = getApiBaseFromToken(req);
+      const leadResponse = await axios.post(`${apiBase}/api/chatbot/createLead`, leadPayload, {
         headers: {
           'Content-Type': 'application/json'
         },
