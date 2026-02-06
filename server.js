@@ -275,19 +275,9 @@ app.post('/api/auth/exchangeShortToken', async (req, res) => {
       });
     }
     
-    // Decode token to determine environment (without verification)
-    let apiBase = 'https://dev.flossly.ai'; // Default
-    try {
-      const payload = JSON.parse(Buffer.from(shortToken.split('.')[1], 'base64').toString());
-      if (payload.environment === 'production') {
-        apiBase = 'https://app.flossly.ai';
-        console.log('🔵 [AUTH] Routing to PRODUCTION API:', apiBase);
-      } else {
-        console.log('🟢 [AUTH] Routing to DEV API:', apiBase);
-      }
-    } catch (decodeError) {
-      console.warn('[AUTH] Could not decode token environment, using dev.flossly.ai:', decodeError.message);
-    }
+    // Hardcoded to PRODUCTION
+    let apiBase = 'https://app.flossly.ai';
+    console.log('🔵 [AUTH] Routing to PRODUCTION API (HARDCODED):', apiBase);
     
     const response = await axios.post(`${apiBase}/api/auth/exchangeShortToken`, {
       shortToken
