@@ -312,20 +312,9 @@ app.get('/api/auth/profile', async (req, res) => {
       });
     }
     
-    // Decode access token to determine environment (without verification)
-    let apiBase = 'https://dev.flossly.ai'; // Default
-    try {
-      const accessToken = authHeader.replace('Bearer ', '');
-      const payload = JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64').toString());
-      if (payload.environment === 'production') {
-        apiBase = 'https://app.flossly.ai';
-        console.log('🔵 [AUTH] Routing profile to PRODUCTION API:', apiBase);
-      } else {
-        console.log('🟢 [AUTH] Routing profile to DEV API:', apiBase);
-      }
-    } catch (decodeError) {
-      console.warn('[AUTH] Could not decode access token environment, using dev.flossly.ai:', decodeError.message);
-    }
+    // Hardcoded to PRODUCTION
+    let apiBase = 'https://app.flossly.ai';
+    console.log('🔵 [AUTH] Routing profile to PRODUCTION API (HARDCODED):', apiBase);
     
     const response = await axios.get(`${apiBase}/api/auth/profile`, {
       headers: {
