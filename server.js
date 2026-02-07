@@ -275,9 +275,19 @@ app.post('/api/auth/exchangeShortToken', async (req, res) => {
       });
     }
     
-    // Hardcoded to PRODUCTION
-    let apiBase = 'https://app.flossly.ai';
-    console.log('🔵 [AUTH] Routing to PRODUCTION API (HARDCODED):', apiBase);
+    // Decode token to determine environment (without verification)
+    let apiBase = 'https://dev.flossly.ai'; // Default
+    try {
+      const payload = JSON.parse(Buffer.from(shortToken.split('.')[1], 'base64').toString());
+      if (payload.environment === 'production') {
+        apiBase = 'https://app.flossly.ai';
+        console.log('🔵 [AUTH] Routing to PRODUCTION API:', apiBase);
+      } else {
+        console.log('🟢 [AUTH] Routing to DEV API:', apiBase);
+      }
+    } catch (decodeError) {
+      console.warn('[AUTH] Could not decode token environment, using dev.flossly.ai:', decodeError.message);
+    }
     
     const response = await axios.post(`${apiBase}/api/auth/exchangeShortToken`, {
       shortToken
@@ -312,9 +322,20 @@ app.get('/api/auth/profile', async (req, res) => {
       });
     }
     
-    // Hardcoded to PRODUCTION
-    let apiBase = 'https://app.flossly.ai';
-    console.log('🔵 [AUTH] Routing profile to PRODUCTION API (HARDCODED):', apiBase);
+    // Decode access token to determine environment (without verification)
+    let apiBase = 'https://dev.flossly.ai'; // Default
+    try {
+      const accessToken = authHeader.replace('Bearer ', '');
+      const payload = JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64').toString());
+      if (payload.environment === 'production') {
+        apiBase = 'https://app.flossly.ai';
+        console.log('🔵 [AUTH] Routing profile to PRODUCTION API:', apiBase);
+      } else {
+        console.log('🟢 [AUTH] Routing profile to DEV API:', apiBase);
+      }
+    } catch (decodeError) {
+      console.warn('[AUTH] Could not decode access token environment, using dev.flossly.ai:', decodeError.message);
+    }
     
     const response = await axios.get(`${apiBase}/api/auth/profile`, {
       headers: {
