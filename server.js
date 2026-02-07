@@ -368,6 +368,96 @@ app.get('/api/auth/profile', async (req, res) => {
 });
 
 // ============================================================================
+// CHATBOT CONFIG PROXY ENDPOINTS
+// ============================================================================
+
+// Save bot configuration
+app.post('/api/chatbot/save', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        code: -1,
+        message: 'No authorization token provided'
+      });
+    }
+    
+    // Get API base from header or token
+    const envHeader = req.headers['x-flossy-environment'];
+    let apiBase = 'https://dev.flossly.ai';
+    
+    if (envHeader === 'production') {
+      apiBase = 'https://app.flossly.ai';
+      console.log('🔵 [CHATBOT] Routing save to PRODUCTION API (from header):', apiBase);
+    } else {
+      console.log('🟢 [CHATBOT] Routing save to DEV API:', apiBase);
+    }
+    
+    const response = await axios.post(`${apiBase}/api/chatbot/save`, req.body, {
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+    
+    res.json(response.data);
+  } catch (error) {
+    console.error('[CHATBOT] Save error:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      success: false,
+      message: error.response?.data?.message || 'Failed to save bot config',
+      code: error.response?.data?.code || -1
+    });
+  }
+});
+
+// Get bot configuration
+app.get('/api/chatbot/get', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        code: -1,
+        message: 'No authorization token provided'
+      });
+    }
+    
+    // Get API base from header or token
+    const envHeader = req.headers['x-flossy-environment'];
+    let apiBase = 'https://dev.flossly.ai';
+    
+    if (envHeader === 'production') {
+      apiBase = 'https://app.flossly.ai';
+      console.log('🔵 [CHATBOT] Routing get to PRODUCTION API (from header):', apiBase);
+    } else {
+      console.log('🟢 [CHATBOT] Routing get to DEV API:', apiBase);
+    }
+    
+    const response = await axios.get(`${apiBase}/api/chatbot/get`, {
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+    
+    res.json(response.data);
+  } catch (error) {
+    console.error('[CHATBOT] Get error:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      success: false,
+      message: error.response?.data?.message || 'Failed to get bot config',
+      code: error.response?.data?.code || -1
+    });
+  }
+});
+
+// ============================================================================
 // MIDDLEWARE: Determine API base URL from user's token environment
 // ============================================================================
 
