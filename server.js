@@ -202,7 +202,7 @@ app.use(compression()); // Gzip compression
 app.use(cors({
   origin: true, // Allow all origins
   methods: ['GET', 'POST', 'OPTIONS', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept', 'Cache-Control', 'Pragma', 'Expires'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept', 'Cache-Control', 'Pragma', 'Expires', 'X-Flossy-Environment'],
   credentials: false
 }));
 
@@ -218,7 +218,7 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Origin, X-Requested-With, Accept, Cache-Control, Pragma, Expires');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Origin, X-Requested-With, Accept, Cache-Control, Pragma, Expires, X-Flossy-Environment');
   res.setHeader('Access-Control-Allow-Credentials', 'false');
   
   // Security headers
@@ -322,19 +322,30 @@ app.get('/api/auth/profile', async (req, res) => {
       });
     }
     
-    // Decode access token to determine environment (without verification)
+    // Determine environment from custom header OR by decoding token
     let apiBase = 'https://dev.flossly.ai'; // Default
-    try {
-      const accessToken = authHeader.replace('Bearer ', '');
-      const payload = JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64').toString());
-      if (payload.environment === 'production') {
-        apiBase = 'https://app.flossly.ai';
-        console.log('🔵 [AUTH] Routing profile to PRODUCTION API:', apiBase);
-      } else {
-        console.log('🟢 [AUTH] Routing profile to DEV API:', apiBase);
+    
+    // First check for X-Flossy-Environment header (from frontend)
+    const envHeader = req.headers['x-flossy-environment'];
+    if (envHeader === 'production') {
+      apiBase = 'https://app.flossly.ai';
+      console.log('🔵 [AUTH] Routing profile to PRODUCTION API (from header):', apiBase);
+    } else if (envHeader === 'development') {
+      console.log('🟢 [AUTH] Routing profile to DEV API (from header):', apiBase);
+    } else {
+      // Fallback: try to decode access token (though it likely won't have environment)
+      try {
+        const accessToken = authHeader.replace('Bearer ', '');
+        const payload = JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64').toString());
+        if (payload.environment === 'production') {
+          apiBase = 'https://app.flossly.ai';
+          console.log('🔵 [AUTH] Routing profile to PRODUCTION API (from token):', apiBase);
+        } else {
+          console.log('🟢 [AUTH] Routing profile to DEV API (from token/default):', apiBase);
+        }
+      } catch (decodeError) {
+        console.warn('[AUTH] Could not decode access token environment, using dev.flossly.ai:', decodeError.message);
       }
-    } catch (decodeError) {
-      console.warn('[AUTH] Could not decode access token environment, using dev.flossly.ai:', decodeError.message);
     }
     
     const response = await axios.get(`${apiBase}/api/auth/profile`, {
@@ -364,7 +375,18 @@ function getApiBaseFromToken(req) {
   // Default to dev
   let apiBase = 'https://dev.flossly.ai';
   
-  // Try to get environment from Authorization header (for authenticated requests)
+  // First check for X-Flossy-Environment header (from frontend)
+  const envHeader = req.headers['x-flossy-environment'];
+  if (envHeader === 'production') {
+    apiBase = 'https://app.flossly.ai';
+    console.log(`🔵 [API] Using PRODUCTION environment (from header) for ${req.method} ${req.url}`);
+    return apiBase;
+  } else if (envHeader === 'development') {
+    console.log(`🟢 [API] Using DEV environment (from header) for ${req.method} ${req.url}`);
+    return apiBase;
+  }
+  
+  // Fallback: Try to get environment from Authorization header (for authenticated requests)
   const authHeader = req.headers.authorization;
   if (authHeader) {
     try {
@@ -373,9 +395,9 @@ function getApiBaseFromToken(req) {
       
       if (payload.environment === 'production') {
         apiBase = 'https://app.flossly.ai';
-        console.log(`🔵 [API] Using PRODUCTION environment for ${req.method} ${req.url}`);
+        console.log(`🔵 [API] Using PRODUCTION environment (from token) for ${req.method} ${req.url}`);
       } else {
-        console.log(`🟢 [API] Using DEV environment for ${req.method} ${req.url}`);
+        console.log(`🟢 [API] Using DEV environment (from token) for ${req.method} ${req.url}`);
       }
     } catch (error) {
       console.warn('[API] Could not decode token environment, using dev.flossly.ai');
