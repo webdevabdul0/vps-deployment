@@ -476,6 +476,21 @@ function getApiBaseFromToken(req) {
     return apiBase;
   }
   
+  // Check if botId is in request body or params, and if we have cached environment for it
+  const botId = req.body?.botId || req.params?.botId;
+  if (botId) {
+    const data = readData();
+    const cachedEnv = data.bot_environments?.[botId];
+    if (cachedEnv === 'production') {
+      apiBase = 'https://app.flossly.ai';
+      console.log(`🔵 [API] Using PRODUCTION environment (from cached botId) for ${req.method} ${req.url}`);
+      return apiBase;
+    } else if (cachedEnv === 'development') {
+      console.log(`🟢 [API] Using DEV environment (from cached botId) for ${req.method} ${req.url}`);
+      return apiBase;
+    }
+  }
+  
   // Fallback: Try to get environment from Authorization header (for authenticated requests)
   const authHeader = req.headers.authorization;
   if (authHeader) {
@@ -555,6 +570,16 @@ app.get('/api/bot-config/:botId', async (req, res) => {
           ...botConfig,
           cachedAt: new Date().toISOString()
         };
+        
+        // Also cache the environment if present in the config
+        if (botConfig.environment) {
+          if (!data.bot_environments) {
+            data.bot_environments = {};
+          }
+          data.bot_environments[botId] = botConfig.environment;
+          console.log(`Cached environment for botId ${botId}: ${botConfig.environment}`);
+        }
+        
         writeData(data);
         
         console.log(`Config fetched from main API and cached for botId: ${botId}`);
@@ -957,6 +982,15 @@ app.post('/api/bot-config/:botId', (req, res) => {
       ...config,
       cachedAt: new Date().toISOString()
     };
+    
+    // Also cache the environment if present
+    if (config.environment) {
+      if (!data.bot_environments) {
+        data.bot_environments = {};
+      }
+      data.bot_environments[botId] = config.environment;
+      console.log(`Cached environment for botId ${botId}: ${config.environment}`);
+    }
     
     writeData(data);
     
