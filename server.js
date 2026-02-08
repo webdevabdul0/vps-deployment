@@ -571,13 +571,20 @@ app.get('/api/bot-config/:botId', async (req, res) => {
           cachedAt: new Date().toISOString()
         };
         
+        // TODO: Uncomment when production API returns environment field
         // Also cache the environment if present in the config
-        if (botConfig.environment) {
-          if (!data.bot_environments) {
-            data.bot_environments = {};
-          }
-          data.bot_environments[botId] = botConfig.environment;
-          console.log(`Cached environment for botId ${botId}: ${botConfig.environment}`);
+        // if (botConfig.environment) {
+        //   if (!data.bot_environments) {
+        //     data.bot_environments = {};
+        //   }
+        //   data.bot_environments[botId] = botConfig.environment;
+        //   console.log(`Cached environment for botId ${botId}: ${botConfig.environment}`);
+        // }
+        
+        // FOR NOW: Get environment from VPS cache (will be set when saving via bot builder)
+        if (data.bot_environments && data.bot_environments[botId]) {
+          botConfig.environment = data.bot_environments[botId];
+          console.log(`Using cached environment for botId ${botId}: ${botConfig.environment}`);
         }
         
         writeData(data);
@@ -983,13 +990,13 @@ app.post('/api/bot-config/:botId', (req, res) => {
       cachedAt: new Date().toISOString()
     };
     
-    // Also cache the environment if present
+    // Cache the environment - this is from bot builder which has it in sessionStorage
     if (config.environment) {
       if (!data.bot_environments) {
         data.bot_environments = {};
       }
       data.bot_environments[botId] = config.environment;
-      console.log(`Cached environment for botId ${botId}: ${config.environment}`);
+      console.log(`✅ Cached environment for botId ${botId}: ${config.environment}`);
     }
     
     writeData(data);
