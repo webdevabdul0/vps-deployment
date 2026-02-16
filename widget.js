@@ -254,7 +254,7 @@
     inputArea.style.cssText = `padding:16px;border-top:1px solid #f3f4f6;background:white;display:flex;width:100%;box-sizing:border-box;`;
     inputArea.innerHTML = `
         <div style="display:flex;gap:12px;align-items:center;width:100%;">
-            <input class="flossy-input" type="text" placeholder="Type your message here..." 
+            <input class="flossy-input" type="text" placeholder="Type your question and I’ll assist you instantly…" 
                    style="flex:1;padding:12px 16px;border:2px solid #e5e7eb;border-radius:12px;font-size:14px;color:#374151;background:white;outline:none;transition:all 0.2s ease;min-height:42px;width:100%;" />
             <button class="flossy-send-btn" style="width:42px;height:42px;border-radius:12px;background:${botConfig.themeColor};color:white;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s ease;transform:scale(1);box-shadow:0 2px 4px rgba(0,0,0,0.1);flex-shrink:0;">
                 <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width:2.5">
