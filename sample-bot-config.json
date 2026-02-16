@@ -72,26 +72,32 @@
     "options": [
       {
         "id": "7d27b2f3-fc70-4881-8f3c-bab23a8b0b21",
-        "name": "Teeth Whitening",
-        "description": "Professional teeth whitening treatments for a brighter smile",
+        "name": "INVISALIGN®",
+        "description": "Custom-made transparent removable clear aligners for straightening teeth discreetly",
         "brochureUrl": ""
       },
       {
         "id": "b93f40d1-8583-4576-81f1-5285050eed9e",
-        "name": "Invisalign",
-        "description": "Clear aligners for straightening teeth discreetly",
-        "brochureUrl": ""
-      },
-      {
-        "id": "1beaa64a-d977-4813-a1bb-0ecadbf494ff",
-        "name": "Dental Implants",
+        "name": "DENTAL IMPLANTS",
         "description": "Permanent tooth replacement solutions",
         "brochureUrl": ""
       },
       {
+        "id": "1beaa64a-d977-4813-a1bb-0ecadbf494ff",
+        "name": "ORTHODONTICS",
+        "description": "Teeth straightening and bite correction treatments",
+        "brochureUrl": ""
+      },
+      {
         "id": "1d9bb8ca-f8fd-4b68-b754-417b8fe2a8ca",
-        "name": "General Checkup",
-        "description": "Comprehensive dental examination and cleaning",
+        "name": "COSMETIC DENTISTRY",
+        "description": "Aesthetic dental treatments for a beautiful smile",
+        "brochureUrl": ""
+      },
+      {
+        "id": "2e8cc9db-a9fe-4c69-c865-528c9fb3b9db",
+        "name": "OTHER",
+        "description": "Other dental treatments or services",
         "brochureUrl": ""
       }
     ],

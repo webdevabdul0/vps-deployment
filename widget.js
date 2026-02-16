@@ -61,7 +61,13 @@
         },
         
         treatmentFlow: {
-            options: [],
+            options: [
+                { name: 'INVISALIGN®', description: 'Custom-made transparent removable clear aligners for straightening teeth discreetly', brochureUrl: '' },
+                { name: 'DENTAL IMPLANTS', description: 'Permanent tooth replacement solutions', brochureUrl: '' },
+                { name: 'ORTHODONTICS', description: 'Teeth straightening and bite correction treatments', brochureUrl: '' },
+                { name: 'COSMETIC DENTISTRY', description: 'Aesthetic dental treatments for a beautiful smile', brochureUrl: '' },
+                { name: 'OTHER', description: 'Other dental treatments or services', brochureUrl: '' }
+            ],
             webhookUrl: 'https://n8n.flossly.ai/webhook/gmail-brochure'
         },
         
@@ -409,13 +415,22 @@
         
         let optionsHTML = '<div style="margin-bottom:12px;font-weight:bold;color:#374151;">Please select an option:</div>';
         const appointmentOptions = [
-            { text: 'Request an appointment', type: 'appointment' },
-            { text: 'Learn about treatments', type: 'treatment' },
-            { text: 'Request a callback', type: 'callback' }
+            { text: 'I am a NEW PATIENT and would like to send an ENQUIRY', type: 'callback' },
+            { text: 'I am interested in INVISALIGN® (custom-made transparent removable clear \'aligners\')', type: 'treatment', treatmentName: 'INVISALIGN®' },
+            { text: 'I am interested in DENTAL IMPLANTS', type: 'treatment', treatmentName: 'DENTAL IMPLANTS' },
+            { text: 'I am interested in ORTHODONTICS', type: 'treatment', treatmentName: 'ORTHODONTICS' },
+            { text: 'I am interested in COSMETIC DENTISTRY', type: 'treatment', treatmentName: 'COSMETIC DENTISTRY' },
+            { text: 'I would like to enquire about an OTHER dental treatment or service', type: 'treatment', treatmentName: 'OTHER' },
+            { text: 'I need an EMERGENCY dental appointment', type: 'appointment', isEmergency: true },
+            { text: 'I am an EXISTING PATIENT (book / amend / cancel an appointment, update your details or send an enquiry)', type: 'appointment', isExisting: true }
         ];
         appointmentOptions.forEach(option => {
+            const treatmentAttr = option.treatmentName ? `data-treatment="${option.treatmentName}"` : '';
+            const emergencyAttr = option.isEmergency ? `data-emergency="true"` : '';
+            const existingAttr = option.isExisting ? `data-existing="true"` : '';
             optionsHTML += `
                 <div class="flossy-option" data-type="${option.type}" data-text="${option.text}" 
+                     ${treatmentAttr} ${emergencyAttr} ${existingAttr}
                      style="background:#f8fafc;border:1px solid #e5e7eb;padding:12px;border-radius:12px;margin-bottom:8px;cursor:pointer;transition:all 0.3s ease;display:flex;align-items:center;gap:12px;">
                     <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${botConfig.themeColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
                         <div style="width:12px;height:12px;border-radius:50%;background:${botConfig.themeColor};opacity:0;transform:scale(0);transition:all 0.2s ease;"></div>
@@ -433,7 +448,10 @@
             option.addEventListener('click', function() {
                 const type = this.getAttribute('data-type');
                 const text = this.getAttribute('data-text');
-                selectOption(type, text);
+                const treatmentName = this.getAttribute('data-treatment');
+                const isEmergency = this.getAttribute('data-emergency') === 'true';
+                const isExisting = this.getAttribute('data-existing') === 'true';
+                selectOption(type, text, treatmentName, isEmergency, isExisting);
             });
             option.addEventListener('mouseenter', function() {
                 this.style.borderColor = '#d1d5db';
@@ -454,7 +472,7 @@
         });
     }
     
-    function selectOption(type, text) {
+    function selectOption(type, text, treatmentName, isEmergency, isExisting) {
         // Remove options
         const optionsDiv = messagesContainer.querySelector('.flossy-slide-in:last-child');
         if (optionsDiv) optionsDiv.remove();
@@ -473,14 +491,42 @@
             }, 1500);
         } else if (type === 'treatment') {
             currentWorkflow = 'treatment';
-            const typingDiv = showTypingIndicator();
-            setTimeout(() => {
-                hideTypingIndicator();
-                addBotMessage('Hi! I\'m here to answer questions about our dental treatments. What treatment are you interested in learning more about?');
+            
+            // If a specific treatment was selected, skip to showing that treatment directly
+            if (treatmentName) {
+                // Find the treatment in the config
+                const treatment = botConfig.treatmentFlow.options.find(opt => opt.name === treatmentName);
+                if (treatment) {
+                    selectedTreatment = treatment;
+                    const typingDiv = showTypingIndicator();
+                    setTimeout(() => {
+                        hideTypingIndicator();
+                        setTimeout(() => {
+                            showTreatmentActions();
+                        }, 500);
+                    }, 1000);
+                } else {
+                    // Fallback to showing all treatment options if not found
+                    const typingDiv = showTypingIndicator();
+                    setTimeout(() => {
+                        hideTypingIndicator();
+                        addBotMessage('Hi! I\'m here to answer questions about our dental treatments. What treatment are you interested in learning more about?');
+                        setTimeout(() => {
+                            showTreatmentOptionsUI();
+                        }, 1000);
+                    }, 1500);
+                }
+            } else {
+                // No specific treatment, show all options
+                const typingDiv = showTypingIndicator();
                 setTimeout(() => {
-                    showTreatmentOptionsUI();
-                }, 1000);
-            }, 1500);
+                    hideTypingIndicator();
+                    addBotMessage('Hi! I\'m here to answer questions about our dental treatments. What treatment are you interested in learning more about?');
+                    setTimeout(() => {
+                        showTreatmentOptionsUI();
+                    }, 1000);
+                }, 1500);
+            }
         } else if (type === 'callback') {
             currentWorkflow = 'callback';
             const typingDiv = showTypingIndicator();
@@ -492,6 +538,19 @@
                 }, 1000);
             }, 1500);
         }
+    }
+    
+    function showTreatmentActions() {
+        // Show treatment-specific action options directly
+        const typingDiv = showTypingIndicator();
+        setTimeout(() => {
+            hideTypingIndicator();
+            const treatmentName = selectedTreatment ? selectedTreatment.name : 'this treatment';
+            addBotMessage(`Great! You're interested in ${treatmentName}. How can I help you with this?`);
+            setTimeout(() => {
+                showTreatmentActionOptions();
+            }, 1000);
+        }, 1500);
     }
     
     function startAppointmentFlow() {
@@ -1088,21 +1147,23 @@
         optionsDiv.className = 'flossy-slide-in';
         optionsDiv.style.cssText = 'margin-bottom:16px;';
         
-        let optionsHTML = '<div style="margin-bottom:12px;font-weight:bold;color:#374151;">Please select an option:</div>';
+        const treatmentName = selectedTreatment ? selectedTreatment.name : 'this treatment';
+        
+        let optionsHTML = '<div style="margin-bottom:12px;font-weight:bold;color:#374151;">What would you like to do?</div>';
         optionsHTML += `
             <div class="flossy-treatment-action" data-action="brochure" 
                  style="background:#f8fafc;border:1px solid #e5e7eb;padding:12px;border-radius:12px;margin-bottom:8px;cursor:pointer;transition:all 0.3s ease;display:flex;align-items:center;gap:12px;">
                 <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${botConfig.themeColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
                     <div style="width:12px;height:12px;border-radius:50%;background:${botConfig.themeColor};opacity:0;transform:scale(0);transition:all 0.2s ease;"></div>
                 </div>
-                <span style="font-size:14px;color:#374151;font-weight:500;">Send me the brochure</span>
+                <span style="font-size:14px;color:#374151;font-weight:500;">Send me information about ${treatmentName}</span>
             </div>
             <div class="flossy-treatment-action" data-action="consultation" 
                  style="background:#f8fafc;border:1px solid #e5e7eb;padding:12px;border-radius:12px;margin-bottom:8px;cursor:pointer;transition:all 0.3s ease;display:flex;align-items:center;gap:12px;">
                 <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${botConfig.themeColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
                     <div style="width:12px;height:12px;border-radius:50%;background:${botConfig.themeColor};opacity:0;transform:scale(0);transition:all 0.2s ease;"></div>
                 </div>
-                <span style="font-size:14px;color:#374151;font-weight:500;">Schedule a consultation</span>
+                <span style="font-size:14px;color:#374151;font-weight:500;">Book an appointment for ${treatmentName}</span>
             </div>
         `;
         optionsDiv.innerHTML = optionsHTML;
