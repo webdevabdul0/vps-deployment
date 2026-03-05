@@ -725,71 +725,8 @@
                 } else if (field.name === 'preferredTime') {
                     response = `Perfect! Let me check availability for ${value}.`;
                     
-                    // Create lead after user provides date and time (as requested - only called once here)
-                    if (currentWorkflow === 'appointment' && formData.fullName && formData.contact && formData.phone) {
-                        // Format date and time
-                        let formattedDate = formData.preferredDate;
-                        if (formData.preferredDate && !formData.preferredDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                            const dateObj = new Date(formData.preferredDate);
-                            formattedDate = dateObj.toISOString().split('T')[0];
-                        }
-                        
-                        let formattedTime = value;
-                        if (value && !value.match(/^\d{2}:\d{2}$/)) {
-                            const timeMatch = value.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
-                            if (timeMatch) {
-                                let hours = parseInt(timeMatch[1]);
-                                const minutes = timeMatch[2];
-                                const ampm = timeMatch[3];
-                                
-                                if (ampm) {
-                                    if (ampm.toUpperCase() === 'PM' && hours !== 12) {
-                                        hours += 12;
-                                    } else if (ampm.toUpperCase() === 'AM' && hours === 12) {
-                                        hours = 0;
-                                    }
-                                }
-                                formattedTime = `${String(hours).padStart(2, '0')}:${minutes}`;
-                            }
-                        }
-                        
-                        // Get treatment information if available
-                        const treatmentName = selectedTreatment ? selectedTreatment.name : 'Checkup';
-                        const treatmentDuration = selectedTreatment ? (selectedTreatment.defaultDuration || 30) : 30;
-                        
-                        // Prepare lead data for Flossly Lead API
-                        const leadData = {
-                            botId: botConfig.botId,
-                            botName: botConfig.name,
-                            type: 'appointment_booking',
-                            appointment: {
-                                date: formattedDate,
-                                time: formattedTime,
-                                duration: treatmentDuration,
-                                treatmentName: treatmentName,
-                                notes: `Appointment booking request via chatbot`
-                            },
-                            customer: {
-                                email: formData.contact || '',
-                                name: formData.fullName || '',
-                                phone: formData.phone || ''
-                            },
-                            company: {
-                                name: botConfig.companyName,
-                                ownerEmail: botConfig.companyOwnerEmail,
-                                phone: botConfig.companyPhone || '',
-                                website: botConfig.companyWebsite || '',
-                                address: '',
-                                tagline: '',
-                                logo: ''
-                            }
-                        };
-                        
-                        // Send to Flossly Lead API (non-blocking) - ONLY CALLED ONCE HERE
-                        sendToFlosslyLeadAPI(leadData, (leadResponse) => {
-                            console.log('Lead created after date/time in appointment flow:', leadResponse);
-                        });
-                    }
+                    // Lead creation is handled in completeAppointment() so that a lead is attempted
+                    // even if the appointment booking API/webhook fails.
                 }
                 
                 addBotMessage(response);
@@ -903,8 +840,38 @@
             });
         }
         
-        // Note: Lead is already created when user provides date/time (in setupFieldEventListeners)
-        // So we don't create it again here to avoid duplicates
+        // Create lead data for Flossly Lead API (always attempt to create lead, independent of appointment API)
+        const leadData = {
+            botId: botConfig.botId,
+            botName: botConfig.name,
+            type: 'appointment_booking',
+            appointment: {
+                date: formattedDate,
+                time: formattedTime,
+                duration: treatmentDuration,
+                treatmentName: treatmentName,
+                notes: `Appointment booking request via chatbot`
+            },
+            customer: {
+                email: formData.contact || '',
+                name: formData.fullName || '',
+                phone: formData.phone || ''
+            },
+            company: {
+                name: botConfig.companyName,
+                ownerEmail: botConfig.companyOwnerEmail,
+                phone: botConfig.companyPhone || '',
+                website: botConfig.companyWebsite || '',
+                address: '',
+                tagline: '',
+                logo: ''
+            }
+        };
+        
+        // Send to Flossly Lead API (non-blocking - lead creation should not block appointment flow)
+        sendToFlosslyLeadAPI(leadData, (leadResponse) => {
+            console.log('Lead creation attempt in appointment flow:', leadResponse);
+        });
         
         // Send to Flossly API endpoint
         sendToFlosslyAPI(appointmentData, (response) => {
@@ -1047,28 +1014,21 @@
             });
         }
         
-        // Then, send to Flossly Lead API endpoint (blocking for user feedback)
-        sendToFlosslyLeadAPI(treatmentData, (response) => {
-            hideTypingIndicator();
-            
-            if (response.success) {
-                addBotMessage("✅ Perfect! I've sent you the brochure details. Our team will contact you shortly with more information.");
-                
-                setTimeout(() => {
-                    addBotMessage("If you'd like a call from our team, just type 'callback.'");
-                    setTimeout(() => {
-                        showCallbackInputField();
-                    }, 1000);
-                }, 2000);
-            } else {
-                addBotMessage("❌ " + (response.message || response.error || "Sorry, there was an error sending the brochure. Please try again."));
-                
-                setTimeout(() => {
-                    addBotMessage("Would you like to try again?");
-                    showAppointmentOptions();
-                }, 2000);
-            }
+        // Send to Flossly Lead API endpoint (non-blocking - continue flow regardless of lead API result)
+        sendToFlosslyLeadAPI(treatmentData, (leadResponse) => {
+            console.log('Lead creation attempt in treatment flow:', leadResponse);
         });
+        
+        // Show success message to user (independent of lead creation)
+        hideTypingIndicator();
+        addBotMessage("✅ Perfect! I've sent you the brochure details. Our team will contact you shortly with more information.");
+        
+        setTimeout(() => {
+            addBotMessage("If you'd like a call from our team, just type 'callback.'");
+            setTimeout(() => {
+                showCallbackInputField();
+            }, 1000);
+        }, 2000);
     }
     
     // Treatment workflow functions
@@ -1532,8 +1492,8 @@
     function completeCallback() {
         const typingDiv = showTypingIndicator();
         
-        // Send to callback webhook
-        sendToCallbackWebhook({
+        // Prepare callback webhook data
+        const callbackWebhookData = {
             botId: botConfig.botId,
             botName: botConfig.name,
             type: 'callback_request',
@@ -1557,7 +1517,42 @@
                 tagline: '',
                 logo: ''
             }
-        }, (response) => {
+        };
+        
+        // Create lead data for Flossly Lead API (always attempt to create lead, independent of callback webhook)
+        const leadData = {
+            botId: botConfig.botId,
+            botName: botConfig.name,
+            type: 'callback_request',
+            callback: {
+                reason: callbackData.reason,
+                preferredTime: callbackData.timing,
+                urgency: 'Normal',
+                status: 'pending'
+            },
+            customer: {
+                email: callbackData.email || '',
+                name: callbackData.name || '',
+                phone: callbackData.phone || ''
+            },
+            company: {
+                name: botConfig.companyName,
+                ownerEmail: botConfig.companyOwnerEmail,
+                phone: botConfig.companyPhone || '',
+                website: botConfig.companyWebsite || '',
+                address: '',
+                tagline: '',
+                logo: ''
+            }
+        };
+        
+        // Send to Flossly Lead API (non-blocking - lead creation should not block callback flow)
+        sendToFlosslyLeadAPI(leadData, (leadResponse) => {
+            console.log('Lead creation attempt in callback flow:', leadResponse);
+        });
+        
+        // Send to callback webhook
+        sendToCallbackWebhook(callbackWebhookData, (response) => {
             hideTypingIndicator();
             
             if (response.success) {
@@ -1849,7 +1844,7 @@
     
     function sendToFlosslyAPI(data, callback) {
         // Send to server endpoint that will handle Flossly API calls
-        const flosslyApiUrl = `https://widget.flossly.ai/api/flossly/appointment`;
+        const flosslyApiUrl = `${API_BASE}/api/flossly/appointment`;
         
         fetch(flosslyApiUrl, {
             method: 'POST',
@@ -1891,7 +1886,7 @@
     
     function sendToFlosslyLeadAPI(data, callback) {
         // Send to server endpoint that will handle Flossly Lead API calls
-        const flosslyLeadApiUrl = `https://widget.flossly.ai/api/flossly/lead`;
+        const flosslyLeadApiUrl = `${API_BASE}/api/flossly/lead`;
         
         fetch(flosslyLeadApiUrl, {
             method: 'POST',
@@ -1975,6 +1970,9 @@
     function sendToCallbackWebhook(data, callback) {
         if (!botConfig.gmailCallbackUrl) {
             console.log('No callback webhook URL configured');
+            if (callback) {
+                callback({ success: false, message: 'No callback webhook URL configured' });
+            }
             return;
         }
         
