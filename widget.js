@@ -845,6 +845,7 @@
             botId: botConfig.botId,
             botName: botConfig.name,
             type: 'appointment_booking',
+            comments: 'Appointment Booking',
             appointment: {
                 date: formattedDate,
                 time: formattedTime,
@@ -983,6 +984,7 @@
             botId: botConfig.botId,
             botName: botConfig.name,
             type: 'brochure_request',
+            comments: `Treatment Enquiry - ${selectedTreatment.name}`,
             treatment: {
                 name: selectedTreatment.name,
                 description: selectedTreatment.description,
@@ -1524,6 +1526,7 @@
             botId: botConfig.botId,
             botName: botConfig.name,
             type: 'callback_request',
+            comments: 'Callback Request',
             callback: {
                 reason: callbackData.reason,
                 preferredTime: callbackData.timing,

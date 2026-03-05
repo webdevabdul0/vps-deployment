@@ -884,8 +884,10 @@ app.post('/api/flossly/lead', async (req, res) => {
       };
       
       // Add optional fields if available
-      if (treatment && treatment.name) {
-        leadPayload.treatment = treatment.name;
+      // Use comments from request if provided, otherwise construct from treatment
+      if (req.body.comments) {
+        leadPayload.comments = req.body.comments;
+      } else if (treatment && treatment.name) {
         if (treatment.description) {
           leadPayload.comments = `Treatment enquiry: ${treatment.name}. ${treatment.description}`;
         } else {
@@ -893,8 +895,8 @@ app.post('/api/flossly/lead', async (req, res) => {
         }
       }
       
-      if (company && company.name) {
-        leadPayload.comments = (leadPayload.comments || '') + ` | Company: ${company.name}`;
+      if (treatment && treatment.name) {
+        leadPayload.treatment = treatment.name;
       }
       
       const apiBase = getApiBaseFromToken(req);
