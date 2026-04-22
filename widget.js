@@ -414,16 +414,36 @@
         optionsDiv.style.cssText = 'margin-bottom:16px;';
         
         let optionsHTML = '<div style="margin-bottom:12px;font-weight:bold;color:#374151;">Please select an option:</div>';
+        
         const appointmentOptions = [
-            { text: 'I am a NEW PATIENT and would like to send an ENQUIRY', type: 'callback' },
-            { text: 'I am interested in INVISALIGN® (custom-made transparent removable clear \'aligners\')', type: 'treatment', treatmentName: 'INVISALIGN®' },
-            { text: 'I am interested in DENTAL IMPLANTS', type: 'treatment', treatmentName: 'DENTAL IMPLANTS' },
-            { text: 'I am interested in ORTHODONTICS', type: 'treatment', treatmentName: 'ORTHODONTICS' },
-            { text: 'I am interested in COSMETIC DENTISTRY', type: 'treatment', treatmentName: 'COSMETIC DENTISTRY' },
-            { text: 'I would like to enquire about an OTHER dental treatment or service', type: 'treatment', treatmentName: 'OTHER' },
+            { text: 'I am a NEW PATIENT and would like to send an ENQUIRY', type: 'callback' }
+        ];
+        
+        // Dynamically build treatment options from botConfig.treatmentFlow.options
+        if (botConfig.treatmentFlow && botConfig.treatmentFlow.options && botConfig.treatmentFlow.options.length > 0) {
+            botConfig.treatmentFlow.options.forEach(option => {
+                appointmentOptions.push({
+                    text: `I am interested in ${option.name}${option.description ? ` (${option.description.substring(0, 50)}${option.description.length > 50 ? '...' : ''})` : ''}`,
+                    type: 'treatment',
+                    treatmentName: option.name
+                });
+            });
+        } else {
+            // Fallback to default treatments if none configured
+            appointmentOptions.push(
+                { text: 'I am interested in INVISALIGN®', type: 'treatment', treatmentName: 'INVISALIGN®' },
+                { text: 'I am interested in DENTAL IMPLANTS', type: 'treatment', treatmentName: 'DENTAL IMPLANTS' },
+                { text: 'I am interested in ORTHODONTICS', type: 'treatment', treatmentName: 'ORTHODONTICS' },
+                { text: 'I am interested in COSMETIC DENTISTRY', type: 'treatment', treatmentName: 'COSMETIC DENTISTRY' },
+                { text: 'I would like to enquire about an OTHER dental treatment or service', type: 'treatment', treatmentName: 'OTHER' }
+            );
+        }
+        
+        appointmentOptions.push(
             { text: 'I need an EMERGENCY dental appointment', type: 'appointment', isEmergency: true },
             { text: 'I am an EXISTING PATIENT (book / amend / cancel an appointment, update your details or send an enquiry)', type: 'appointment', isExisting: true }
-        ];
+        );
+        
         appointmentOptions.forEach(option => {
             const treatmentAttr = option.treatmentName ? `data-treatment="${option.treatmentName}"` : '';
             const emergencyAttr = option.isEmergency ? `data-emergency="true"` : '';
