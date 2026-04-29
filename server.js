@@ -847,10 +847,10 @@ app.post('/api/flossly/appointment', async (req, res) => {
 app.post('/api/flossly/lead', async (req, res) => {
   const startTime = Date.now();
   
-  try {
-    const { botId, customer, treatment, company } = req.body;
-    
-    if (!botId || !customer) {
+    try {
+      const { botId, customer, treatment, company, chatHistory, comments } = req.body;
+
+      if (!botId || !customer) {
       return res.status(400).json({
         success: false,
         error: 'Missing required fields: botId or customer'
@@ -898,7 +898,11 @@ app.post('/api/flossly/lead', async (req, res) => {
       if (treatment && treatment.name) {
         leadPayload.treatment = treatment.name;
       }
-      
+
+      if (chatHistory && Array.isArray(chatHistory)) {
+        leadPayload.chatHistory = chatHistory;
+      }
+
       const apiBase = getApiBaseFromToken(req);
       const leadResponse = await axios.post(`${apiBase}/api/chatbot/createLead`, leadPayload, {
         headers: {

@@ -3,16 +3,23 @@
  * Main conversational AI agent with web browsing and API tool calling
  */
 
-const OpenAI = require('openai');
+const Anthropic = require('@anthropic-ai/sdk');
 const axios = require('axios');
 const { tools, browseWebsite, searchPracticeWebsite } = require('./ai-tools');
 const fs = require('fs').promises;
 const path = require('path');
 
-// Initialize OpenAI
-const openai = new OpenAI({ 
-  apiKey: process.env.OPENAI_API_KEY
-});
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+function toClaudeTools(openAiTools) {
+  return openAiTools.map(t => ({
+    name: t.function.name,
+    description: t.function.description,
+    input_schema: t.function.parameters
+  }));
+}
+
+const claudeTools = toClaudeTools(tools);
 
 // Internal API base URL (AI agent runs server-side; this should point to THIS server)
 // Override via INTERNAL_API_BASE (recommended in production)
@@ -170,75 +177,53 @@ async function chatWithAgent(botId, userMessage, conversationHistory = [], userT
     // Load bot configuration
     const botConfig = await loadBotConfig(botId);
     
-    // Build messages array
-    const messages = [
-      {
-        role: "system",
-        content: buildSystemPrompt(botConfig)
-      },
-      ...conversationHistory,
-      {
-        role: "user",
-        content: userMessage
-      }
-    ];
-    
-    // Track tool execution for logging
-    let toolExecutionCount = 0;
-    const maxToolExecutions = 5; // Prevent infinite loops
-    const toolDetails = []; // Store details of each tool execution
-    
+    const systemPrompt = buildSystemPrompt(botConfig);
+    const claudeMessages = conversationHistory.map(m => ({
+      role: m.role === 'system' ? 'user' : m.role,
+      content: m.content
+    }));
+    claudeMessages.push({ role: 'user', content: userMessage });
+
     // Initial API call
-    console.log('📡 [AI Agent] Calling OpenAI with', messages.length, 'messages and', tools.length, 'tools available');
-    
-    let response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: messages,
-      tools: tools,
-      tool_choice: "auto",
-      temperature: 0.7,
-      max_tokens: 1000
+    console.log('📡 [AI Agent] Calling Claude with', claudeMessages.length, 'messages and', claudeTools.length, 'tools available');
+
+    let response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: claudeMessages,
+      tools: claudeTools
     });
-    
-    let message = response.choices[0].message;
-    
-    console.log('📨 [AI Agent] OpenAI Response:');
-    console.log('   - Has content:', !!message.content);
-    console.log('   - Has tool_calls:', !!message.tool_calls);
-    console.log('   - Tool calls count:', message.tool_calls?.length || 0);
-    
+
+    let assistantMessage = response.content;
+    let toolCalls = assistantMessage.filter(block => block.type === 'tool_use');
+
+    console.log('📨 [AI Agent] Claude Response:');
+    console.log('   - Has content:', assistantMessage.some(b => b.type === 'text'));
+    console.log('   - Tool calls count:', toolCalls.length);
+
     // Handle tool calls (may require multiple rounds)
-    while (message.tool_calls && message.tool_calls.length > 0 && toolExecutionCount < maxToolExecutions) {
-      console.log('\n🔧 [AI Agent] TOOL CALLS DETECTED:', message.tool_calls.length);
-      
-      // Add assistant's message with tool calls to history
-      messages.push({
-        role: "assistant",
-        content: message.content || null,
-        tool_calls: message.tool_calls
-      });
-      
-      // Execute each tool call
-      for (const toolCall of message.tool_calls) {
-        const functionName = toolCall.function.name;
-        const functionArgs = JSON.parse(toolCall.function.arguments);
-        
+    while (toolCalls.length > 0 && toolExecutionCount < maxToolExecutions) {
+      console.log('\n🔧 [AI Agent] TOOL CALLS DETECTED:', toolCalls.length);
+
+      for (const toolCall of toolCalls) {
+        const functionName = toolCall.name;
+        const functionArgs = toolCall.input;
+
         console.log(`\n📞 [AI Agent] CALLING TOOL: ${functionName}`);
         console.log('📝 [AI Agent] Tool Arguments:', JSON.stringify(functionArgs, null, 2));
-        
+
         let toolResult;
         const toolStartTime = Date.now();
         let retryCount = 0;
-        const maxRetries = 1; // Allow 1 retry for action tools (appointment, lead, callback)
-        
-        // Determine if this tool should be retried on failure
+        const maxRetries = 1;
+
         const isActionTool = ['book_appointment', 'create_lead', 'schedule_callback'].includes(functionName);
-        
+
         while (retryCount <= maxRetries) {
           try {
             switch (functionName) {
               case 'browse_website':
-                // Validate URL before calling Firecrawl
                 if (!functionArgs.url || functionArgs.url === 'the website' || !functionArgs.url.startsWith('http')) {
                   toolResult = {
                     success: false,
@@ -246,15 +231,11 @@ async function chatWithAgent(botId, userMessage, conversationHistory = [], userT
                     message: 'The website URL is not available. Please contact the office directly for information.'
                   };
                 } else {
-                  toolResult = await browseWebsite(
-                    functionArgs.url,
-                    functionArgs.focus
-                  );
+                  toolResult = await browseWebsite(functionArgs.url, functionArgs.focus);
                 }
                 break;
-              
+
               case 'search_practice_website':
-                // Validate website exists
                 if (!botConfig.companyWebsite || !botConfig.companyWebsite.startsWith('http')) {
                   toolResult = {
                     success: false,
@@ -262,81 +243,63 @@ async function chatWithAgent(botId, userMessage, conversationHistory = [], userT
                     message: 'The website URL is not available. Please contact the office directly for information.'
                   };
                 } else {
-                  toolResult = await searchPracticeWebsite(
-                    botConfig.companyWebsite,
-                    functionArgs.query
-                  );
+                  toolResult = await searchPracticeWebsite(botConfig.companyWebsite, functionArgs.query);
                 }
                 break;
-              
+
               case 'book_appointment':
                 toolResult = ACTION_TOOLS_DISABLED
                   ? actionToolsDisabledResult('book_appointment')
                   : await executeBookAppointment(botConfig, functionArgs);
                 break;
-              
+
               case 'create_lead':
                 toolResult = ACTION_TOOLS_DISABLED
                   ? actionToolsDisabledResult('create_lead')
-                  : await executeCreateLead(botConfig, functionArgs);
+                  : await executeCreateLead(botConfig, functionArgs, conversationHistory);
                 break;
-              
+
               case 'schedule_callback':
                 toolResult = ACTION_TOOLS_DISABLED
                   ? actionToolsDisabledResult('schedule_callback')
                   : await executeScheduleCallback(botConfig, functionArgs);
                 break;
-              
+
               default:
-                toolResult = {
-                  success: false,
-                  error: `Unknown tool: ${functionName}`
-                };
+                toolResult = { success: false, error: `Unknown tool: ${functionName}` };
             }
-            
-            // If tool succeeded or it's not an action tool, break out of retry loop
-            if (toolResult.success || !isActionTool) {
-              break;
-            }
-            
-            // If tool failed and it's an action tool, check if we should retry
+
+            if (toolResult.success || !isActionTool) break;
+
             if (retryCount < maxRetries && toolResult.error) {
-              // Check if error is retryable (network errors, timeouts, etc.)
-              const isRetryableError = 
+              const isRetryableError =
                 toolResult.error.includes('timeout') ||
                 toolResult.error.includes('ETIMEDOUT') ||
                 toolResult.error.includes('ECONNREFUSED') ||
                 toolResult.error.includes('network') ||
                 toolResult.error.includes('temporarily unavailable');
-              
+
               if (isRetryableError) {
                 retryCount++;
                 console.log(`🔄 [AI Agent] Retrying ${functionName} (attempt ${retryCount + 1}/${maxRetries + 1}) after error: ${toolResult.error}`);
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+                await new Promise(resolve => setTimeout(resolve, 1000));
                 continue;
               } else {
-                // Error is not retryable (validation error, missing fields, etc.)
                 break;
               }
             } else {
-              // No more retries or validation error
               break;
             }
-            
           } catch (error) {
-            toolResult = {
-              success: false,
-              error: error.message
-            };
-            
-            // Check if we should retry
+            toolResult = { success: false, error: error.message };
+
             if (retryCount < maxRetries && isActionTool) {
-              const isRetryableError = 
+              const isRetryableError =
                 error.code === 'ETIMEDOUT' ||
                 error.code === 'ECONNREFUSED' ||
                 error.message.includes('timeout') ||
                 error.message.includes('network');
-              
+
               if (isRetryableError) {
                 retryCount++;
                 console.log(`🔄 [AI Agent] Retrying ${functionName} (attempt ${retryCount + 1}/${maxRetries + 1}) after exception: ${error.message}`);
@@ -347,51 +310,47 @@ async function chatWithAgent(botId, userMessage, conversationHistory = [], userT
             break;
           }
         }
-        
-        // Log if retry was used
+
         if (retryCount > 0) {
           console.log(`📊 [AI Agent] Tool ${functionName} completed after ${retryCount} ${retryCount === 1 ? 'retry' : 'retries'}. Final result: ${toolResult.success ? 'SUCCESS' : 'FAILED'}`);
         }
-        
+
         const toolDuration = Date.now() - toolStartTime;
-        
         console.log(`✅ [AI Agent] TOOL COMPLETED: ${functionName} (${toolDuration}ms)`);
         console.log('📊 [AI Agent] Tool Result:', JSON.stringify(toolResult, null, 2));
-        
-        // Store tool details for response
+
         toolDetails.push({
           name: functionName,
           arguments: functionArgs,
           result: toolResult,
           duration: toolDuration
         });
-        
-        // Add tool result to messages
-        messages.push({
-          role: "tool",
-          tool_call_id: toolCall.id,
-          content: JSON.stringify(toolResult)
+
+        claudeMessages.push({
+          role: 'user',
+          content: [{
+            type: 'tool_result',
+            tool_use_id: toolCall.id,
+            content: JSON.stringify(toolResult)
+          }]
         });
       }
-      
+
       toolExecutionCount++;
       console.log(`🔄 [AI Agent] Tool execution count: ${toolExecutionCount}/${maxToolExecutions}`);
-      
-      // Get next response from AI with tool results
-      response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: messages,
-        tools: tools,
-        tool_choice: "auto",
-        temperature: 0.7,
-        max_tokens: 1000
+
+      response = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: claudeMessages,
+        tools: claudeTools
       });
-      
-      message = response.choices[0].message;
+
+      assistantMessage = response.content;
+      toolCalls = assistantMessage.filter(block => block.type === 'tool_use');
     }
-    
-    // If a tool was called and it failed, do not allow a "success" tone without surfacing the failure.
-    // This prevents the model from claiming an appointment/lead/callback was created when the API call failed.
+
     const failedTools = toolDetails.filter(t => t?.result?.success === false);
     const lastTool = toolDetails[toolDetails.length - 1];
 
@@ -400,27 +359,25 @@ async function chatWithAgent(botId, userMessage, conversationHistory = [], userT
     console.log(`   - Failed tools: ${failedTools.length}`);
     console.log(`   - Tool details:`, toolDetails.map(t => ({ name: t.name, success: t.result?.success })));
 
-    let finalContent = message.content;
+    let finalContent = assistantMessage.find(b => b.type === 'text')?.text || '';
     if (failedTools.length > 0) {
       console.log('⚠️ [AI Agent] TOOL FAILURE DETECTED - Overriding AI response');
-      // Prefer the tool's own user-facing message if provided
       const toolMsg = lastTool?.result?.message || failedTools[0]?.result?.message;
       finalContent = toolMsg || "I couldn't complete that request due to a technical issue. Please try again or contact the practice directly.";
     }
 
-    // Build conversation history for next turn (keep last 10 messages)
     const updatedHistory = [
       ...conversationHistory,
-      { role: "user", content: userMessage },
-      { role: "assistant", content: finalContent }
-    ].slice(-10); // Keep last 5 exchanges (10 messages)
-    
+      { role: 'user', content: userMessage },
+      { role: 'assistant', content: finalContent }
+    ].slice(-10);
+
     return {
       success: true,
       content: finalContent,
       conversationHistory: updatedHistory,
       toolsUsed: toolExecutionCount,
-      toolDetails: toolDetails // Include detailed tool execution info
+      toolDetails: toolDetails
     };
     
   } catch (error) {
@@ -582,7 +539,7 @@ async function executeBookAppointment(botConfig, appointmentData, userTimezone =
  * Execute lead creation
  * Integrates with Flossly Lead API
  */
-async function executeCreateLead(botConfig, leadData) {
+async function executeCreateLead(botConfig, leadData, conversationHistory = []) {
   try {
     console.log('\n📝 [LEAD CREATION] Starting lead creation process...');
     console.log('📋 [LEAD CREATION] Data received:', JSON.stringify(leadData, null, 2));
@@ -612,7 +569,16 @@ async function executeCreateLead(botConfig, leadData) {
       },
       timestamp: new Date().toISOString()
     };
-    
+
+    if (conversationHistory && conversationHistory.length > 0) {
+      flosslyLeadPayload.chatHistory = conversationHistory
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => ({
+          role: m.role === 'assistant' ? 'bot' : 'user',
+          message: typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+        }));
+    }
+
     // Send to Flossly Lead API endpoint (use production URL like traditional widget)
     const flosslyLeadApiUrl = `https://widget.flossly.ai/api/flossly/lead`;
     console.log('📤 [LEAD CREATION] Sending to Flossly Lead API:', flosslyLeadApiUrl);
@@ -809,59 +775,42 @@ async function executeScheduleCallback(botConfig, callbackData) {
 }
 
 /**
- * Streaming chat function - streams responses directly from OpenAI
+ * Streaming chat function - streams responses directly from Anthropic Claude
  */
 async function* chatWithAgentStream(botId, userMessage, conversationHistory = []) {
   try {
-    // Load bot configuration
     const botConfig = await loadBotConfig(botId);
-    
-    // Build messages array
-    const messages = [
-      {
-        role: "system",
-        content: buildSystemPrompt(botConfig)
-      },
-      ...conversationHistory,
-      {
-        role: "user",
-        content: userMessage
-      }
-    ];
-    
-    // Track tool execution
+
+    const systemPrompt = buildSystemPrompt(botConfig);
+    const claudeMessages = conversationHistory.map(m => ({
+      role: m.role === 'system' ? 'user' : m.role,
+      content: m.content
+    }));
+    claudeMessages.push({ role: 'user', content: userMessage });
+
     let toolExecutionCount = 0;
     const maxToolExecutions = 5;
     const toolDetails = [];
-    
-    // First call - check for tools (non-streaming)
-    let response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: messages,
-      tools: tools,
-      tool_choice: "auto",
-      temperature: 0.7,
-      max_tokens: 1000,
-      stream: false
+
+    let response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: claudeMessages,
+      tools: claudeTools
     });
-    
-    let message = response.choices[0].message;
-    
-    // Handle tool calls if any
-    while (message.tool_calls && message.tool_calls.length > 0 && toolExecutionCount < maxToolExecutions) {
-      messages.push({
-        role: "assistant",
-        content: message.content || null,
-        tool_calls: message.tool_calls
-      });
-      
-      for (const toolCall of message.tool_calls) {
-        const functionName = toolCall.function.name;
-        const functionArgs = JSON.parse(toolCall.function.arguments);
-        
+
+    let assistantMessage = response.content;
+    let toolCalls = assistantMessage.filter(block => block.type === 'tool_use');
+
+    while (toolCalls.length > 0 && toolExecutionCount < maxToolExecutions) {
+      for (const toolCall of toolCalls) {
+        const functionName = toolCall.name;
+        const functionArgs = toolCall.input;
+
         let toolResult;
         const toolStartTime = Date.now();
-        
+
         try {
           switch (functionName) {
             case 'browse_website':
@@ -871,7 +820,7 @@ async function* chatWithAgentStream(botId, userMessage, conversationHistory = []
                 toolResult = await browseWebsite(functionArgs.url, functionArgs.focus);
               }
               break;
-            
+
             case 'search_practice_website':
               if (!botConfig.companyWebsite || !botConfig.companyWebsite.startsWith('http')) {
                 toolResult = { success: false, error: 'Website URL not configured', message: 'Website URL not available.' };
@@ -879,100 +828,96 @@ async function* chatWithAgentStream(botId, userMessage, conversationHistory = []
                 toolResult = await searchPracticeWebsite(botConfig.companyWebsite, functionArgs.query);
               }
               break;
-            
+
             case 'book_appointment':
               toolResult = ACTION_TOOLS_DISABLED
                 ? actionToolsDisabledResult('book_appointment')
                 : await executeBookAppointment(botConfig, functionArgs, userTimezone);
               break;
-            
+
             case 'create_lead':
               toolResult = ACTION_TOOLS_DISABLED
                 ? actionToolsDisabledResult('create_lead')
-                : await executeCreateLead(botConfig, functionArgs);
+                : await executeCreateLead(botConfig, functionArgs, conversationHistory);
               break;
-            
+
             case 'schedule_callback':
               toolResult = ACTION_TOOLS_DISABLED
                 ? actionToolsDisabledResult('schedule_callback')
                 : await executeScheduleCallback(botConfig, functionArgs);
               break;
-            
+
             default:
               toolResult = { success: false, error: `Unknown tool: ${functionName}` };
           }
         } catch (error) {
           toolResult = { success: false, error: error.message };
         }
-        
+
         toolDetails.push({
           name: functionName,
           arguments: functionArgs,
           result: toolResult,
           duration: Date.now() - toolStartTime
         });
-        
-        messages.push({
-          role: "tool",
-          tool_call_id: toolCall.id,
-          content: JSON.stringify(toolResult)
+
+        claudeMessages.push({
+          role: 'user',
+          content: [{
+            type: 'tool_result',
+            tool_use_id: toolCall.id,
+            content: JSON.stringify(toolResult)
+          }]
         });
       }
-      
+
       toolExecutionCount++;
-      
-      // Get next response
-      response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: messages,
-        tools: tools,
-        tool_choice: "auto",
-        temperature: 0.7,
-        max_tokens: 1000,
-        stream: false
+
+      response = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: claudeMessages,
+        tools: claudeTools
       });
-      
-      message = response.choices[0].message;
+
+      assistantMessage = response.content;
+      toolCalls = assistantMessage.filter(block => block.type === 'tool_use');
     }
-    
-    // Add final assistant message to history before streaming
-    messages.push({
-      role: "assistant",
-      content: message.content
+
+    claudeMessages.push({
+      role: 'assistant',
+      content: assistantMessage.find(b => b.type === 'text')?.text || ''
     });
-    
-    // Now stream the response directly from OpenAI
-    const streamResponse = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: messages,
-      temperature: 0.7,
-      max_tokens: 1000,
-      stream: true
+
+    const stream = await anthropic.messages.stream({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: claudeMessages
     });
-    
+
     let fullContent = '';
-    
-    for await (const chunk of streamResponse) {
-      const delta = chunk.choices[0]?.delta?.content || '';
-      if (delta) {
-        fullContent += delta;
-        yield delta; // Yield each chunk directly
+
+    for await (const event of stream) {
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        fullContent += event.delta.text;
+        yield event.delta.text;
       }
     }
-    
-    // Return metadata at the end
+
     return {
       success: true,
       content: fullContent,
       conversationHistory: [
         ...conversationHistory,
-        { role: "user", content: userMessage },
-        { role: "assistant", content: fullContent }
+        { role: 'user', content: userMessage },
+        { role: 'assistant', content: fullContent }
       ].slice(-10),
       toolsUsed: toolExecutionCount,
       toolDetails: toolDetails
     };
-    
+
   } catch (error) {
     console.error('[AI Agent Stream] Error:', error);
     yield "I apologize, but I'm having trouble processing your request right now. Please try again or contact us directly.";

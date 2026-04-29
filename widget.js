@@ -88,6 +88,7 @@
     // AI Mode state (auto-enabled if website is present)
     let aiMode = false;
     let aiConversationHistory = [];
+    let chatHistory = [];
     
     // Fetch bot configuration from VPS API
     async function loadBotConfig() {
@@ -341,6 +342,7 @@
     }
     
     function addBotMessage(text, showAvatar = true) {
+        chatHistory.push({ role: 'bot', message: text });
         const messageDiv = document.createElement('div');
         messageDiv.className = 'flossy-slide-in';
         messageDiv.style.cssText = 'display:flex;gap:12px;margin-bottom:16px;align-items:flex-start;';
@@ -360,6 +362,7 @@
     }
     
     function addUserMessage(text) {
+        chatHistory.push({ role: 'user', message: text });
         const messageDiv = document.createElement('div');
         messageDiv.className = 'flossy-slide-in';
         messageDiv.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:16px;';
@@ -866,6 +869,7 @@
             botName: botConfig.name,
             type: 'appointment_booking',
             comments: 'Appointment Booking',
+            chatHistory: chatHistory,
             appointment: {
                 date: formattedDate,
                 time: formattedTime,
@@ -1037,6 +1041,7 @@
         }
         
         // Send to Flossly Lead API endpoint (non-blocking - continue flow regardless of lead API result)
+        treatmentData.chatHistory = chatHistory;
         sendToFlosslyLeadAPI(treatmentData, (leadResponse) => {
             console.log('Lead creation attempt in treatment flow:', leadResponse);
         });
@@ -1568,8 +1573,8 @@
                 logo: ''
             }
         };
-        
-        // Send to Flossly Lead API (non-blocking - lead creation should not block callback flow)
+
+        leadData.chatHistory = chatHistory;
         sendToFlosslyLeadAPI(leadData, (leadResponse) => {
             console.log('Lead creation attempt in callback flow:', leadResponse);
         });
