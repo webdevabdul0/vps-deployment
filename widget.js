@@ -1967,15 +1967,17 @@
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-            // Check if response has content
-            const contentType = response.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-                return response.json();
-            } else {
-                // If no JSON content, return success response
-                console.log('No JSON response, treating as success');
-                return { success: true, message: 'Request processed successfully' };
-            }
+            return response.text().then(text => {
+                if (!text || !text.trim()) {
+                    return { success: true, message: 'Request processed successfully' };
+                }
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    console.warn('Response was not valid JSON:', text);
+                    return { success: true, message: text };
+                }
+            });
         })
         .then(result => {
             console.log('Treatment webhook result:', result);
@@ -2020,15 +2022,17 @@
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-            // Check if response has content
-            const contentType = response.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-                return response.json();
-            } else {
-                // If no JSON content, return success response
-                console.log('No JSON response, treating as success');
-                return { success: true, message: 'Request processed successfully' };
-            }
+            return response.text().then(text => {
+                if (!text || !text.trim()) {
+                    return { success: true, message: 'Request processed successfully' };
+                }
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    console.warn('Response was not valid JSON:', text);
+                    return { success: true, message: text };
+                }
+            });
         })
         .then(result => {
             console.log('Callback webhook result:', result);
