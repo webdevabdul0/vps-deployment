@@ -412,17 +412,23 @@
     }
     
     function showAppointmentOptions() {
+        // General Business mode — show pain points
+        if (botConfig.useCase === 'general') {
+            showPainPointOptions();
+            return;
+        }
+
+        // Dental mode — original flow
         const optionsDiv = document.createElement('div');
         optionsDiv.className = 'flossy-slide-in';
         optionsDiv.style.cssText = 'margin-bottom:16px;';
-        
+
         let optionsHTML = '<div style="margin-bottom:12px;font-weight:bold;color:#374151;">Please select an option:</div>';
-        
+
         const appointmentOptions = [
             { text: 'I am a NEW PATIENT and would like to send an ENQUIRY', type: 'callback' }
         ];
-        
-        // Dynamically build treatment options from botConfig.treatmentFlow.options
+
         if (botConfig.treatmentFlow && botConfig.treatmentFlow.options && botConfig.treatmentFlow.options.length > 0) {
             botConfig.treatmentFlow.options.forEach(option => {
                 appointmentOptions.push({
@@ -432,7 +438,6 @@
                 });
             });
         } else {
-            // Fallback to default treatments if none configured
             appointmentOptions.push(
                 { text: 'I am interested in INVISALIGN®', type: 'treatment', treatmentName: 'INVISALIGN®' },
                 { text: 'I am interested in DENTAL IMPLANTS', type: 'treatment', treatmentName: 'DENTAL IMPLANTS' },
@@ -441,18 +446,18 @@
                 { text: 'I would like to enquire about an OTHER dental treatment or service', type: 'treatment', treatmentName: 'OTHER' }
             );
         }
-        
+
         appointmentOptions.push(
             { text: 'I need an EMERGENCY dental appointment', type: 'appointment', isEmergency: true },
             { text: 'I am an EXISTING PATIENT (book / amend / cancel an appointment, update your details or send an enquiry)', type: 'appointment', isExisting: true }
         );
-        
+
         appointmentOptions.forEach(option => {
             const treatmentAttr = option.treatmentName ? `data-treatment="${option.treatmentName}"` : '';
             const emergencyAttr = option.isEmergency ? `data-emergency="true"` : '';
             const existingAttr = option.isExisting ? `data-existing="true"` : '';
             optionsHTML += `
-                <div class="flossy-option" data-type="${option.type}" data-text="${option.text}" 
+                <div class="flossy-option" data-type="${option.type}" data-text="${option.text}"
                      ${treatmentAttr} ${emergencyAttr} ${existingAttr}
                      style="background:#f8fafc;border:1px solid #e5e7eb;padding:12px;border-radius:12px;margin-bottom:8px;cursor:pointer;transition:all 0.3s ease;display:flex;align-items:center;gap:12px;">
                     <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${botConfig.themeColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
@@ -465,8 +470,7 @@
         optionsDiv.innerHTML = optionsHTML;
         messagesContainer.appendChild(optionsDiv);
         scrollToBottom();
-        
-        // Add event listeners
+
         optionsDiv.querySelectorAll('.flossy-option').forEach(option => {
             option.addEventListener('click', function() {
                 const type = this.getAttribute('data-type');
@@ -493,6 +497,85 @@
                 innerCircle.style.transform = 'scale(0)';
             });
         });
+    }
+
+    function showPainPointOptions() {
+        const points = (botConfig.painPoints || []).filter(p => p.name && p.name.trim());
+        if (points.length === 0) return;
+
+        const optionsDiv = document.createElement('div');
+        optionsDiv.className = 'flossy-slide-in';
+        optionsDiv.style.cssText = 'margin-bottom:16px;';
+
+        let optionsHTML = `<div style="margin-bottom:12px;font-weight:bold;color:#374151;">Which of these sounds most like your practice right now?</div>`;
+        points.forEach((point, i) => {
+            optionsHTML += `
+                <div class="flossy-painpoint-option" data-index="${i}"
+                     style="background:#f8fafc;border:1px solid #e5e7eb;padding:12px;border-radius:12px;margin-bottom:8px;cursor:pointer;transition:all 0.3s ease;display:flex;align-items:center;gap:12px;">
+                    <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${botConfig.themeColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                        <div style="width:12px;height:12px;border-radius:50%;background:${botConfig.themeColor};opacity:0;transform:scale(0);transition:all 0.2s ease;"></div>
+                    </div>
+                    <span style="font-size:14px;color:#374151;font-weight:500;">${point.name}</span>
+                </div>
+            `;
+        });
+        optionsDiv.innerHTML = optionsHTML;
+        messagesContainer.appendChild(optionsDiv);
+        scrollToBottom();
+
+        optionsDiv.querySelectorAll('.flossy-painpoint-option').forEach(el => {
+            el.addEventListener('click', function() {
+                const index = parseInt(this.getAttribute('data-index'));
+                const point = points[index];
+                optionsDiv.remove();
+                addUserMessage(point.name);
+                const typingDiv = showTypingIndicator();
+                setTimeout(() => {
+                    hideTypingIndicator();
+                    addBotMessage(point.botResponse || "Thanks for sharing that! Let me show you how we can help.");
+                    if (botConfig.meetingLink) {
+                        setTimeout(() => {
+                            showDemoLinkButton();
+                        }, 1000);
+                    }
+                }, 1500);
+            });
+            el.addEventListener('mouseenter', function() {
+                this.style.borderColor = '#d1d5db';
+                this.style.transform = 'scale(1.02)';
+                this.style.boxShadow = '0 4px 6px -1px rgba(0,0,0,0.1)';
+                const inner = this.querySelector('div div');
+                inner.style.opacity = '1';
+                inner.style.transform = 'scale(1)';
+            });
+            el.addEventListener('mouseleave', function() {
+                this.style.borderColor = '#e5e7eb';
+                this.style.transform = 'scale(1)';
+                this.style.boxShadow = 'none';
+                const inner = this.querySelector('div div');
+                inner.style.opacity = '0';
+                inner.style.transform = 'scale(0)';
+            });
+        });
+    }
+
+    function showDemoLinkButton() {
+        const ctaDiv = document.createElement('div');
+        ctaDiv.className = 'flossy-slide-in';
+        ctaDiv.style.cssText = 'margin-bottom:16px;display:flex;gap:12px;align-items:flex-start;';
+        ctaDiv.innerHTML = `
+            <div style="width:32px;flex-shrink:0;"></div>
+            <div>
+                <a href="${botConfig.meetingLink}" target="_blank" rel="noopener noreferrer"
+                   style="display:inline-block;background:${botConfig.themeColor};color:white;font-size:14px;font-weight:600;padding:10px 20px;border-radius:12px;text-decoration:none;transition:opacity 0.2s;"
+                   onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
+                    📅 Book a Demo
+                </a>
+                <div style="font-size:11px;color:#9ca3af;margin-top:4px;margin-left:4px;">Just now</div>
+            </div>
+        `;
+        messagesContainer.appendChild(ctaDiv);
+        scrollToBottom();
     }
     
     function selectOption(type, text, treatmentName, isEmergency, isExisting) {
