@@ -448,8 +448,8 @@
         }
 
         appointmentOptions.push(
-            { text: 'I need an EMERGENCY dental appointment', type: 'appointment', isEmergency: true },
-            { text: 'I am an EXISTING PATIENT (book / amend / cancel an appointment, update your details or send an enquiry)', type: 'appointment', isExisting: true }
+            { text: 'I need an emergency dental appointment', type: 'appointment', isEmergency: true },
+            { text: 'I am an existing patient (book / amend / cancel an appointment, update your details or send an enquiry)', type: 'appointment', isExisting: true }
         );
 
         appointmentOptions.forEach(option => {
