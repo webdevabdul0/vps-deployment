@@ -425,8 +425,9 @@
 
         let optionsHTML = '<div style="margin-bottom:12px;font-weight:bold;color:#374151;">Please select an option:</div>';
 
+        const dentalMenuButtons = botConfig.dentalMenuButtons || {};
         const appointmentOptions = [
-            { text: 'I am a NEW PATIENT and would like to send an ENQUIRY', type: 'callback' }
+            { text: dentalMenuButtons.newPatient || 'I am a NEW PATIENT and would like to send an ENQUIRY', type: 'callback' }
         ];
 
         if (botConfig.treatmentFlow && botConfig.treatmentFlow.options && botConfig.treatmentFlow.options.length > 0) {
@@ -448,8 +449,8 @@
         }
 
         appointmentOptions.push(
-            { text: 'I need an emergency dental appointment', type: 'appointment', isEmergency: true },
-            { text: 'I am an existing patient (book / amend / cancel an appointment, update your details or send an enquiry)', type: 'appointment', isExisting: true }
+            { text: dentalMenuButtons.emergency || 'I need an emergency dental appointment', type: 'appointment', isEmergency: true },
+            { text: dentalMenuButtons.existingPatient || 'I am an existing patient (book / amend / cancel an appointment, update your details or send an enquiry)', type: 'appointment', isExisting: true }
         );
 
         appointmentOptions.forEach(option => {
